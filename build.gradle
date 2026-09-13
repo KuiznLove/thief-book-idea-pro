@@ -1,0 +1,50 @@
+plugins {
+    id 'java'
+    id 'org.jetbrains.intellij' version '1.17.4'
+}
+
+group = 'com.thief'
+version = project.findProperty('pluginVersion') ?: '0.3.1'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // EPUB 容器/OPF/spine/目录（NCX、nav）解析
+    implementation 'com.positiondev.epublib:epublib-core:3.1'
+    // XHTML → 纯文本
+    implementation 'org.jsoup:jsoup:1.17.2'
+    // 离线 TTS：Windows 走 SAPI COM，使用 IntelliJ Platform 自带的 JNA
+    // （com.sun.jna / com.sun.jna.platform.win32.COM.* 随平台 util-8.jar 提供，无需额外声明）
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+intellij {
+    version = project.property('intellijVersion')
+    type = 'IC'
+    pluginName = 'thief-book-idea'
+    // 依赖 org.apache.commons.lang / com.jgoodies.forms 等由 IntelliJ Platform 自带的库，
+    // 无需额外声明依赖
+}
+
+patchPluginXml {
+    // 与 resources/META-INF/plugin.xml 中的 since-build 保持一致，
+    // 避免 gradle 插件把 since-build 覆盖成当前构建版本
+    sinceBuild = '233.0'
+    untilBuild = ''
+}
+
+// 发布到 JetBrains Marketplace 的认证 token。
+// 优先读环境变量（CI），其次读 gradle 属性（本地命令行 -PpublishPluginToken=xxx）
+publishPlugin {
+    token = System.getenv('JETBRAINS_PLUGIN_TOKEN') ?: project.findProperty('publishPluginToken')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

@@ -1,0 +1,141 @@
+<idea-plugin>
+  <id>com.thief.idea</id>
+  <name>CodePilot</name>
+  <version>0.3.1</version>
+  <vendor email="1340976576@qq.com" url="https://github.com/yisier/thief-book-idea">毅斯</vendor>
+
+  <description>
+      <![CDATA[
+    <p><b>An AI coding assistant panel that lives inside the IDE.</b></p>
+    <p><b>IDE 内的 AI 编码助手面板：以对话形式给出代码分析、改动预览与实现说明。</b></p>
+    <br/>
+    <p>
+    <b>How to use? / 使用方式：</b>
+    <br/>
+    1. Open Settings: File | Settings | Other Settings | AI Assistant Config, choose the context source / 打开设置页选择上下文来源
+    <br/>
+    2. Open the "CodePilot" tool window at the bottom, the last session is restored automatically / 打开底部 CodePilot 窗口，自动恢复上次会话
+    <br/>
+    3. Type in the input box at the bottom to continue / 在底部输入框继续
+    <br/>
+    <p>
+    <b>
+    <br/>
+    <br/>
+    Shortcuts / 快捷键 :
+    <br/>
+    Previous message / 上一条回复 : Ctrl + 1 (configurable in settings)
+    <br/>
+    Next message / 下一条回复 : Ctrl + 2 (configurable in settings)
+    <br/>
+    Boss key / 老板键 : Ctrl + 3 (configurable in settings, hides the panel as "Terminal")
+    <br/>
+    Read aloud / 语音朗读 : Ctrl + 4 (configurable in settings)
+    <br/>
+    Input box / 输入框 : Enter = continue, Up/Down = switch history, a page number = jump to that part
+    <br/>
+    Context list on the left / 左侧历史记录 : click an item to jump / 点击条目跳转章节，顶部侧栏图标可收起 / 展开
+    <br/>
+    Font, font size, lines per page, line spacing and hotkeys are configurable. / 可自定义字体、字号、每页行数、行间距与热键
+    <br/>
+    Assistant name and model name are customizable (disguise only). / 助手名称与模型名可自定义（含一个只填名字的自定义模型，纯装饰）
+    <br/>
+    The session position is saved automatically. / 会话进度实时保存，下次自动续读
+     ]]>
+  </description>
+
+  <change-notes>
+    <![CDATA[
+      <h3>0.3.1</h3>
+      <ul>
+        <li>单行 shell 代码块补上完整的卡片头部：SH 角标 + 脚本名（scripts/xxx.sh）+ 复制 / 导出 / 重新生成工具栏 + 绿色 Run 主按钮（播放图标）</li>
+        <li>修复工具窗口被拖窄且左侧"历史记录"展开时，卡片文件名与右上角工具栏重叠的问题（现在会依次收窄文件名 → 收起次要图标 → 收起整条工具栏）</li>
+      </ul>
+      <h3>0.3.0</h3>
+      <ul>
+        <li>新增"单行 shell 代码块"：只有一行，插在自然段中间、把段落切成两半，与 diff 卡片彼此独立</li>
+        <li>设置页 Style 面板新增 "Shell snippet in paragraphs" 开关（默认开启）</li>
+      </ul>
+      <h3>0.2.2</h3>
+      <ul>
+        <li>设置页 Style 面板新增 "Custom model" 输入框：只填模型名即可（不需要 endpoint / API key），纯装饰</li>
+        <li>填写的自定义模型会出现在输入框右下角的模型列表里；改名后直接生效，无需再手动选一次</li>
+      </ul>
+      <h3>0.2.1</h3>
+      <ul>
+        <li>Java 伪装素材整组换成 Spring Boot 智能客服风格（Controller / Service / 意图路由 / 知识库 / 会话 / 转人工 / WebSocket）</li>
+        <li>移除 Java 素材里的深度学习相关内容</li>
+      </ul>
+      <h3>0.2.0</h3>
+      <ul>
+        <li>伪装代码卡片新增 Java 与 Vue 两套素材，可在设置页"Code language"下拉里切换</li>
+        <li>Java 素材为服务端风格（.java / .yaml），Vue 素材为 Vue 3 + TypeScript 风格（.vue / .ts）</li>
+      </ul>
+      <h3>0.1.9</h3>
+      <ul>
+        <li>代码卡片改为按累计字数均匀分布（约每 250 字一张，最多 8 张），长页不再出现"整屏都是正文"</li>
+        <li>修复卡片较窄时文件名与右上角工具栏重叠的问题</li>
+      </ul>
+      <h3>0.1.8</h3>
+      <ul>
+        <li>左侧"历史记录"（epub 目录）支持一键收起 / 展开，收起后阅读区自动加宽</li>
+        <li>收起开关伪装成 IDE 的侧栏图标放在顶部栏（仅有目录时出现），折叠状态重启后保持</li>
+      </ul>
+      <h3>0.1.7</h3>
+      <ul>
+        <li>全新界面：伪装成 AI 编码助手面板，"回复"里插入代码 diff 卡片与行内代码块</li>
+        <li>新增底部输入框：回车继续、↑↓ 切换、输入页码跳转，另支持 /next /prev /play /stop /boss 指令</li>
+        <li>顶部品牌名与模型名可伪装（右键切换/重命名），工具窗口名改为 AI 助手</li>
+        <li>老板键伪装改为收起对话区、显示 Terminal 输出</li>
+      </ul>
+      <h3>0.1.6</h3>
+      <ul>
+        <li>新增离线朗读（TTS）：一页读完自动翻下一页续读</li>
+        <li>朗读热键默认 Ctrl+4，可在设置页自定义；老板键隐藏窗口时一并停止朗读</li>
+        <li>阅读窗口可选系统语音、实时调整语速（朗读中即时生效）</li>
+        <li>Windows 走 SAPI 语音，macOS 走系统 say，Linux 走 espeak-ng，全程离线</li>
+      </ul>
+      <h3>0.1.5</h3>
+      <ul>
+        <li>EPUB 正文支持图片显示：自动解包图片并等比缩放渲染，插图小说也可直接阅读</li>
+        <li>阅读区支持上下滚动：正文溢出时自动出现滚动条，随窗口大小自适应</li>
+      </ul>
+      <h3>0.1.4</h3>
+      <ul>
+        <li>新增 EPUB 电子书支持：自动解包正文并复用现有翻页/进度逻辑</li>
+        <li>EPUB 阅读界面左侧显示目录，点击可跳转到对应章节</li>
+        <li>支持多本 txt 书本切换，在设置页管理书库并快速切书</li>
+        <li>重构设置界面布局并优化字体配置功能</li>
+      </ul>
+    ]]>
+  </change-notes>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/build_number_ranges.html for description -->
+  <idea-version since-build="233.0"/>
+
+  <resource-bundle>messages.AssistantBundle</resource-bundle>
+
+  <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+       on how to target different products -->
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij" >
+    <!--canCloseContents 允许用户关闭-->
+    <toolWindow id="ai-assistant" anchor="bottom" canCloseContents="false"
+                icon="/icons/assistant.png" factoryClass="com.thief.idea.MainUi"/>
+
+    <projectConfigurable groupId="Other Settings" displayName="AI Assistant Config" id="thief.id"
+                         instance="com.thief.idea.Setting"/>
+    <applicationService
+            serviceImplementation="com.thief.idea.PersistentState"/>
+    <!-- Add your extensions here -->
+  </extensions>
+
+  <actions>
+    <!--Add your actions here -->
+    <action id="show-code-pilot" class="com.thief.idea.ShowThiefBook" text="Show CodePilot" description="Show the AI assistant panel">
+      <add-to-group group-id="WindowMenu" anchor="last"/>
+    </action>
+  </actions>
+
+</idea-plugin>
