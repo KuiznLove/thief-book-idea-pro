@@ -37,10 +37,14 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
 2. README「更新记录」加一段；`plugin.xml` 的 `<change-notes>` 加同内容（在 `<![CDATA[` 里用 `<h3>` + `<ul>`）。
 3. `buildPlugin` 出 `build/distributions/thief-book-idea-<version>.zip`，用 `node .workbuddy/tools/zipcheck.js <zip>` 验收（会打印包内 `plugin.xml` 版本并检查各版本特性是否打进去了）。
 4. `git add` **用明确路径**（别用 `git add -A`，`.workbuddy/tmp*`、`tmpclasses-*` 这类校验产物很容易被顺带提交）→ commit → `git tag v<version>`（与 v0.3.3 一致用 lightweight tag）→ push 分支与 tag。
-5. 创建 Release 并上传 zip。**本机没有 gh CLI，环境变量里也没有 `GITHUB_TOKEN`**，走 GitHub REST API：
-   - token 用 `execSync('git credential fill', {input: 'protocol=https\nhost=github.com\n\n'})` 从 Windows 凭据管理器取，**只在进程内使用，不要打印、不要落盘**；
-   - `POST https://api.github.com/repos/KuiznLove/thief-book-idea-pro/releases`（body: tag_name / target_commitish / name / body / draft:false），再 `POST https://uploads.github.com/repos/<owner>/<repo>/releases/<id>/assets?name=<zip 名>` 上传（`Content-Type: application/zip`，`User-Agent` 必填）；
-   - 响应留档在 `.workbuddy/preview/`：`release-resp.json` / `asset-resp.json` / `release-id.txt` / `payload.json`（该目录已被 .gitignore 忽略）。
+5. 创建 Release 并上传 zip —— **用 `.workbuddy/tools/release.js`（一步搞定，v0.3.5 起）**：
+   `RELEASE_PROXY=http://127.0.0.1:7890 node .workbuddy/tools/release.js build/distributions/thief-book-idea-<version>.zip .workbuddy/preview/v<version>-notes.md v<version> "v<version>"`
+   - 发布说明先写成 `.workbuddy/preview/v<version>-notes.md`（该目录已被 .gitignore 忽略；格式沿用 `v0.3.4-notes.md`：`# V<x.y.z>` + 修复/内部/安装 三节，`## 安装` 里写 "Install Plugin from Disk..." 那句）。
+   - 响应留档在 `.workbuddy/preview/`：`release-resp.json` / `asset-resp.json` / `release-id.txt` / `payload.json`。
+   - **本机没有 gh CLI，环境变量里也没有 `GITHUB_TOKEN`**，所以走 GitHub REST API：script 用 `git credential fill` 从 Windows 凭据管理器取 token，**只在进程内使用，不打印、不落盘**，并且只通过 stdin 交给 curl（`--config -`），不进 argv。
+   - **必须用 curl 子进程发请求，不要用 Node 的 `fetch`**：undici 不读 `HTTP_PROXY`/`HTTPS_PROXY`（Node 22 还没 `--use-env-proxy`），直连会 `OpenSSL SSL_read: unexpected eof`。
+   - ⚠️ **上传完立刻回读 release 可能看到 `assets: []`**——GitHub API 带 `Cache-Control: private, max-age=60`，代理会把"刚创建、还没附件"的那份缓存喂回来（v0.3.5 就这么虚惊一场）。以 `asset-resp.json` 里的 `state=uploaded` 为准，或按 release **id**（`/releases/<id>`）+ `Cache-Control: no-cache` 复查。
+   - 手工步骤（脚本坏了时的备选）：`POST https://api.github.com/repos/KuiznLove/thief-book-idea-pro/releases`（body: tag_name / target_commitish / name / body / draft:false），再 `POST https://uploads.github.com/repos/<owner>/<repo>/releases/<id>/assets?name=<zip 名>`（`Content-Type: application/zip`，`User-Agent` 必填）。
 - **push 要带代理**：直连 GitHub 会报 `OpenSSL SSL_read: ... unexpected eof`，加 `-c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890`。
 - `git status` 的 ahead/behind 计数可能陈旧（本地 remote-tracking ref 没跟着更新），要确认远端真实状态用 `git ls-remote origin refs/heads/master`。
 

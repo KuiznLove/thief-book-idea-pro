@@ -59,3 +59,9 @@ IntelliJ IDEA 插件的"摸鱼阅读器"，但从 v0.1.7 起**外观伪装成 AI
   - `-Dprobe.fontScale=<倍率>` 模拟真实 IDE 的字体放大（离线时 `JBUI.Fonts` 不会自动跟随）；字体放大后可能触发 `sun.font.FontUtilities` 的 `IllegalAccessError`，要带 `--add-exports=java.desktop/sun.font=ALL-UNNAMED`。
 - `InkProfile.java` 的两个易错参数：`y0 y1` 把量测限制在一条横带里（**整张预览图不分带直接量没意义**——列聚类会把顶栏和正文混成一列）；末尾 `light|dark` 选墨迹极性，**离线预览是亮色主题必须传 `light`**（墨迹取暗像素）且阈值要抬到 ~200，否则浅灰的次要色图标会被漏掉、量出来只剩两三个元素。
 - `LayoutProbe.java`（2026-09-23 新增）：一次性探针，用来排除"`FlowLayout` 在自己容器里居中算错"这个假设（**等高容器下它是准的**），留着备查。
+- `release.js`（2026-09-23 新增）：**发版一条命令搞定**——建 GitHub Release + 上传安装包。
+  `RELEASE_PROXY=http://127.0.0.1:7890 node .workbuddy/tools/release.js build/distributions/thief-book-idea-<ver>.zip .workbuddy/preview/v<ver>-notes.md v<ver> "v<ver>"`
+  - 必须用 `curl.exe` 子进程，**别改成 Node 的 `fetch`**：undici 不读 `HTTP_PROXY`/`HTTPS_PROXY`（Node 22 无 `--use-env-proxy`），直连 github 会 `OpenSSL SSL_read: unexpected eof`。
+  - token 走 `git credential fill` 取，**只经 stdin** 交给 curl 的 `--config -`（不进 argv、不打印、不落盘）；curl 配置文件里**不能有反斜杠**，路径统一换成 `/`。
+  - ⚠️ 上传完立刻回读 release 可能是 `assets: []`（GitHub API `max-age=60`，代理喂回"刚创建、还没附件"的缓存）——以 `asset-resp.json` 的 `state=uploaded` 为准，或按 release **id** + `Cache-Control: no-cache` 复查。
+  - 发布说明文件（`v<ver>-notes.md`）放在 `.workbuddy/preview/`（已 gitignore），格式沿用 `v0.3.4-notes.md`。
