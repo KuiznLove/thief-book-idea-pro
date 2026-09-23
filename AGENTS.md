@@ -24,6 +24,18 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - `EpubUtil.java` 依赖 epublib（见 `build.gradle`），平台 lib 里没有，会报"程序包 nl.siegmann.epublib 不存在"；把 `EpubUtil.java` 以及引用它的 `book/BookSource.java`、`MainUi.java`、`Setting.java`、`ShowThiefBook.java` 一起从清单里去掉，剩下的文件应当零错误。也可以把 gradle 缓存里的 epublib/jsoup jar 加进 `-cp` 直接编全量（`find ~/.gradle/caches/modules-2 -iname "epublib*.jar"`）。
    - 只想确认某个平台 API 存在 / 签名对不对时，写个几行的临时类调一下再编译，比翻文档快（可参考 `.workbuddy/tools/` 下的独立小工具写法）。
 
+## 发布（GitHub Release，仓库 `KuiznLove/thief-book-idea-pro`）
+1. 升版本号**两处**：`build.gradle` 的 `version` 默认值 + `plugin.xml` 的 `<version>`。
+2. README「更新记录」加一段；`plugin.xml` 的 `<change-notes>` 加同内容（在 `<![CDATA[` 里用 `<h3>` + `<ul>`）。
+3. `buildPlugin` 出 `build/distributions/thief-book-idea-<version>.zip`，用 `node .workbuddy/tools/zipcheck.js <zip>` 验收（会打印包内 `plugin.xml` 版本并检查各版本特性是否打进去了）。
+4. `git add` **用明确路径**（别用 `git add -A`，`.workbuddy/tmp*`、`tmpclasses-*` 这类校验产物很容易被顺带提交）→ commit → `git tag v<version>`（与 v0.3.3 一致用 lightweight tag）→ push 分支与 tag。
+5. 创建 Release 并上传 zip。**本机没有 gh CLI，环境变量里也没有 `GITHUB_TOKEN`**，走 GitHub REST API：
+   - token 用 `execSync('git credential fill', {input: 'protocol=https\nhost=github.com\n\n'})` 从 Windows 凭据管理器取，**只在进程内使用，不要打印、不要落盘**；
+   - `POST https://api.github.com/repos/KuiznLove/thief-book-idea-pro/releases`（body: tag_name / target_commitish / name / body / draft:false），再 `POST https://uploads.github.com/repos/<owner>/<repo>/releases/<id>/assets?name=<zip 名>` 上传（`Content-Type: application/zip`，`User-Agent` 必填）；
+   - 响应留档在 `.workbuddy/preview/`：`release-resp.json` / `asset-resp.json` / `release-id.txt` / `payload.json`（该目录已被 .gitignore 忽略）。
+- **push 要带代理**：直连 GitHub 会报 `OpenSSL SSL_read: ... unexpected eof`，加 `-c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890`。
+- `git status` 的 ahead/behind 计数可能陈旧（本地 remote-tracking ref 没跟着更新），要确认远端真实状态用 `git ls-remote origin refs/heads/master`。
+
 ## 源码布局（Gradle 标准目录）
 - `src/main/java/` —— Java 源码根，包 `com.thief.idea`。
 - `src/main/java/com/thief/idea/book/` —— 文件读取引擎（`BookPager` 分页 + `BookSource` 读取来源），纯 IO、零 Swing 依赖，从 `MainUi` 抽出，语义自测见 `.workbuddy/tools/PagerCheck.java`。

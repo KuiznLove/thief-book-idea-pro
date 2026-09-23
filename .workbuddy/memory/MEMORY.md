@@ -16,7 +16,9 @@ IntelliJ IDEA 插件的"摸鱼阅读器"，但从 v0.1.7 起**外观伪装成 AI
 - **版本历史**：`481ca58`（first commit，重构前：MainUi 1881 行自带 IO）→ `78b42cb`（v0.3.3：抽出 `book/BookPager`+`BookSource`、`PersistentState` 迁移到平台 `XmlSerializer`、稳定性修复）→ `3498e14`（图标修复）。要做"重构前后对比"就以 481ca58 为基线。
 - ⚠️ **本机 Git Bash 会吞掉 `git show <rev>^:<path>` 里的 `^`**（取到的是 `rev` 本身），会让人误判"某个改动早就存在"。先用 `git rev-parse <rev>^` 拿到哈希再取文件。
 - 跑 `.workbuddy/tools/` 下的 PagerCheck / StateCheck（需要 platform lib + epublib + jsoup）：用 node 扫 `~/.gradle/caches/modules-2/files-2.1` 找 `ideaIC-2023.3`、`epublib*.jar`、`jsoup*.jar`，拼 classpath 后再加 `build/classes/java/main`。
-- `BookPager.turnBack()` 目前**没有下限保护**：越界上一页会把 `currentPage` 弄成负数，并污染 `seekDictionary[0]`，使之后的 `jumpTo` 整体错位（实测 `jumpTo(10)` 返回 L21）。用户路径被 `MainUi` 的 `currentLine()/lineCount <= 1` 守卫挡住，改分页逻辑时留意——证据见 `.workbuddy/tools/PagerEdgeCheck.java`。
+- `BookPager.turnBack()` **有下限保护**（回退结果夹到 0），且 `readForwardLocked()` 只在 `currentPage > 0` 时写 `seekDictionary`——两条配套，删任一条都会让越界回退污染 0 号缓存、使之后的 `jumpTo` 整体错位一整页（v0.3.4 已修，`.workbuddy/tools/PagerEdgeCheck.java` 是这对约定的守门用例）。用户路径另有 `MainUi` 的 `currentLine()/lineCount <= 1` 守卫。
+- **发布（GitHub Release）**：升版本号两处（`build.gradle` + `plugin.xml`）→ README/change-notes → `buildPlugin` + `zipcheck` → 明确路径 `git add` → commit → `git tag v<版本>` → push。**push 必须带代理**（`-c http.proxy=127.0.0.1:7890 -c https.proxy=...`，直连会报 SSL unexpected eof）；**本机无 gh CLI / 无 GITHUB_TOKEN**，建 Release 走 REST API，token 用 `git credential fill` 取。完整步骤见 AGENTS.md「发布」一节。
+- 对比 UiPreview 预览图时要**留意鼠标位置**：`GlyphButton` 的悬停底色会让某个按钮区域出现几千像素差异，同一份代码重跑即可排除。
 - 源码文件统一 **CRLF**；新增文件请保持 CRLF。
 - 界面文案与注释用中文；UI 配色必须走 `AssistantTheme` 的 JBColor 配对，禁止写死颜色。
 - `SettingUi.form` / `SettingUi.java` 是 GUI Designer 生成物，一般不要手改；唯一例外是"每页行数"下拉（1~30）两处同步手工扩展过，改它要一起改。
