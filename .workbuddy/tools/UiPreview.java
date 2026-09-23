@@ -150,6 +150,14 @@ public class UiPreview {
         // 三级降级（收窄文件名 → 收起次要图标 → 收起整条工具栏）有没有失效、会不会叠字。
         // 用固定宽度而不是跟随参数，是为了让它每次预览都被覆盖到，不依赖手输参数
         render(suffix(out, "-narrow.png"), 400, height, true, SAMPLE, DisguiseContent.PYTHON);
+        // 可选：第 4 个参数给一个本地 txt 样本（如用户书里截出来的一页），
+        // 用长页画布额外渲染一张，方便按真实正文核对卡片/shell 分布
+        if (args.length > 3) {
+            String fileSample = new String(java.nio.file.Files.readAllBytes(
+                    java.nio.file.Paths.get(args[3])), java.nio.charset.StandardCharsets.UTF_8);
+            render(suffix(out, "-file.png"), width, Math.max(height, 2200), true, fileSample,
+                    DisguiseContent.PYTHON);
+        }
         System.exit(0);
     }
 

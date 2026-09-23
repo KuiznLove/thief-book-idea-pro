@@ -86,7 +86,8 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
     3. 含 epub 图片占位的段落直接跳过；
     4. **shell 块的头部与 diff 卡片完全同构**（`SH` 角标 + `scripts/xxx.sh` 文件名 + 复制/导出/刷新 + 主按钮），只有主按钮换成 "Run"（播放三角、`AssistantIcons.play()`），底色/描边也复用 `AssistantTheme.CARD_BG` / `CARD_BORDER`——**给 diff 卡片头部加元素时，shell 块要一起改**，否则一眼就能看出两类卡片不是同一个"助手"给的。
      阈值是标定过的：60 字切出来最好看，但实测一段 25 段的正文里只有个位数段落达标，功能等于白加；40 字是"还看得出两截、又足够常见"的下限。
-  - 卡片只会落在段落之间，所以**单个超长段落内部插不进卡片**；整页只有一个落脚点时（段落极少），由结尾话术前的那张兜底卡片补一张。
+  - **长段落会被"段内插卡"从句子边界切开**（`cardSplitCut` / `cardSplitPoint`：字数阈值前后 `CARD_SPLIT_BAND=75` 字窗口内找最近的句末标点，切点距两端至少 `CARD_SPLIT_EDGE=24` 字；一段可连续切多刀，每跨一个阈值切一刀）。只按"段后落卡"时，跨越阈值的长段落会把卡片间隔撑大到整段长度，出现**满屏正文没有代码块**（用户报过两次）；**shell 块与段内插卡在同一段落互斥、卡片优先**——shell 只是装饰，长段被 shell 独占会退化成"一条命令 + 满屏正文"。改这段算法后必须跑 `.workbuddy/tools/CardGapCheck.java`（断言相邻代码元素的字数间隔有界 + 同 seed 渲染两次分布一致）。
+  - 整页只有一两个落脚点、`placed` 仍为 0 的极端情况，由结尾话术前的那张兜底卡片补一张。
   - 该面板直接作为滚动视图并实现 `Scrollable#getScrollableTracksViewportWidth=true`，段落是内部类 `ParagraphPane`（BoxLayout 下按已知宽度自算换行高度）。**改布局时不要退化成把 JTextPane 直接塞进 BoxLayout**，否则换行高度会错乱。
   - **正文/小标题/代码行都是"只读但可选中可复制"的文本**（公共配置在 `AssistantTheme.makeSelectable`）：
     - "不可编辑"与"不可选中"是两回事——文本组件必须 `setFocusable(true)` 才能用鼠标建立选区。历史版本给 `ParagraphPane` 设了 `setFocusable(false)`，正文就怎么都选不中；**不要**为了"点上去没反应"把它改回去。
@@ -149,6 +150,9 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - StateCheck 验证 thief-book.xml 新旧格式双向兼容（旧格式读入 → 各 getter 取值 → 回写属性/`<book>` 子元素一致、老配置只有 bookPath 时导入第一本书、全新状态走 getter 默认值）。**改 `PersistentState` 的注解或字段名前必须跑**。
 11. 图标快速核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/IconPreview.java 输出.png 8`。
    - 只把工具栏三个图标（复制/下载/刷新）画到一张放大 PNG，几秒出图。**UiPreview 近期在本机多次挂起时用它替代**；改 `AssistantIcons` 后先跑它看形状，再酌情跑完整 UiPreview + PngDiff。
+12. 卡片分布自测：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 --add-exports=java.desktop/sun.font=ALL-UNNAMED -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/CardGapCheck.java`。
+   - 渲染超长段落/长短混合等最坏情况样本，遍历组件树统计相邻"代码元素"（diff 卡片/shell 块）之间的正文字数，断言最大间隔 ≤680 字且同 seed 两次渲染分布一致。**改 AssistantPageView 的卡片分布算法后必须跑**——"间隔被长段落撑大"在缩略图上不容易看出来，这个工具直接量化。
+   - UiPreview 支持第 4 个参数传本地 txt 样本（如用户书里截的一页），额外渲染一张 `输出-file.png` 长页，用于按真实正文核对分布。
 12. 分页边界核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/PagerEdgeCheck.java`。
    - 补 `PagerCheck` 没覆盖的三种边界：首页继续"上一页"（页码不能变负）、**越界回退之后 `jumpTo` 的定位是否仍准确**（这条专门盯指针缓存被写坏）、CRLF 换行与 `jumpTo` 越界。与上面两条约定（`turnBack` 下限、缓存只在 `currentPage > 0` 时写）成对存在。
 13. 图标总览与清晰度核对：

@@ -33,6 +33,9 @@ import java.util.regex.Pattern;
  * </ol>
  * 除了段落之间的 diff 卡片，还会（开关打开时）在某些自然段<strong>内部</strong>插入一条单行
  * shell 命令，把段落切成两半；两类代码块彼此独立，见 {@link #shellBlock(DisguiseContent.ShellScript, int)}。
+ * 长段落从内部跨越字数阈值时，diff 卡片也会从句末标点处切开段落插进去（见
+ * {@link #cardSplitPoint}），保证卡片间隔不被整段长度撑大——否则会出现满屏正文、
+ * 一张代码卡片都看不到的页面。
  * <p>
  * 正文里的英文/数字会被渲染成行内代码块（灰底等宽），与真实助手回复的排版一致。
  * <p>
@@ -73,8 +76,28 @@ public final class AssistantPageView extends JPanel implements Scrollable {
      *   <li>250 字约等于 13 行正文（一屏 400~500px 能显示的行数），
      *   保证无论滚到哪一屏都至少能看见一张卡片；一页只有几百字时靠顶部那张兜底。</li>
      * </ol>
+     * 跨越阈值的<b>长段落</b>会在段落内部的句末标点处切开插卡（见 {@link #cardSplitPoint}），
+     * 不再等整段结束——否则间隔会被整段长度撑大，出现满屏正文没有代码块的情况
      **/
     private static final int CHARS_PER_CARD = 250;
+
+    /**
+     * 段内插卡只考虑长于这个字数的段落：短段落按"段后插卡"的误差本来就小，
+     * 切开反而显得碎
+     **/
+    private static final int MIN_CARD_SPLIT_PARAGRAPH = 100;
+
+    /**
+     * 段内插卡的切点搜索窗口：在目标位置（字数阈值落在段内的位置）前后各这么多字里
+     * 找最近的句末标点
+     **/
+    private static final int CARD_SPLIT_BAND = 75;
+
+    /**
+     * 段内插卡的切点距段首/段尾的最小字数：保证切出来的两半都还是"成段的正文"，
+     * 不会出现卡片后面只挂着半句话的尾巴
+     **/
+    private static final int CARD_SPLIT_EDGE = 24;
 
     /**
      * 一页里最多插入几条单行 shell 命令。
@@ -164,8 +187,13 @@ public final class AssistantPageView extends JPanel implements Scrollable {
         int shellPlaced = 0;
         for (int i = 0; i < paragraphs.size(); i++) {
             String text = paragraphs.get(i);
-            // 命中候选段落时，从中间那个句末标点处把段落切成两半，命令插在两半之间
+            // 命中候选段落时，从中间那个句末标点处把段落切成两半，命令插在两半之间。
+            // 但本段若跨越了字数阈值，卡片优先——shell 只是装饰，长段落被 shell 独占
+            // 会退化成"一条命令 + 满屏正文没有卡片"
             int cut = shellSlots.contains(i) ? splitPoint(text) : -1;
+            if (cut > 0 && cardSplitCut(text, 0, consumed, placed, extraCards, totalChars) > 0) {
+                cut = -1;
+            }
             if (cut > 0) {
                 addBlock(paragraph(text.substring(0, cut)));
                 addBlock(gap(JBUI.scale(5)));
@@ -174,7 +202,30 @@ public final class AssistantPageView extends JPanel implements Scrollable {
                 addBlock(paragraph(text.substring(cut)));
                 shellPlaced++;
             } else {
-                addBlock(paragraph(text));
+                // 段内插卡（可能连续多刀）：长段落会接连跨越多个字数阈值，若仍等"段后"落卡，
+                // 卡片间隔会被整段长度撑大（超长段一张卡都拦不住，整屏都是正文）。
+                // 每跨过一个阈值就从句末标点处切开插一张卡，直到剩余部分不再跨阈值，
+                // 间隔超冲被限制在一句话以内
+                int pos = 0;
+                while (placed < extraCards) {
+                    int cardCut = cardSplitCut(text, pos, consumed, placed, extraCards, totalChars);
+                    if (cardCut <= pos) {
+                        break;
+                    }
+                    addBlock(paragraph(text.substring(pos, cardCut)));
+                    addBlock(gap(JBUI.scale(5)));
+                    addBlock(heading(DisguiseContent.sectionTitle(seed, placed)));
+                    addBlock(gap(JBUI.scale(3)));
+                    addBlock(codeCard(DisguiseContent.snippet(lang, seed, placed + 1), placed + 1));
+                    addBlock(gap(JBUI.scale(5)));
+                    placed++;
+                    pos = cardCut;
+                }
+                if (pos > 0 && pos < text.length()) {
+                    addBlock(paragraph(text.substring(pos)));
+                } else if (pos == 0) {
+                    addBlock(paragraph(text));
+                }
             }
             addBlock(gap(paragraphGap));
             consumed += text.length();
@@ -442,9 +493,7 @@ public final class AssistantPageView extends JPanel implements Scrollable {
         int middle = length / 2;
         int best = -1;
         for (int i = from; i <= to; i++) {
-            char previous = text.charAt(i - 1);
-            if (previous != '。' && previous != '！' && previous != '？'
-                    && previous != '；' && previous != '…') {
+            if (!isSentenceEnd(text.charAt(i - 1))) {
                 continue;
             }
             if (best < 0 || Math.abs(i - middle) < Math.abs(best - middle)) {
@@ -452,6 +501,55 @@ public final class AssistantPageView extends JPanel implements Scrollable {
             }
         }
         return best;
+    }
+
+    /**
+     * 判断段内插卡是否适用：段落从 {@code offset} 起的剩余部分跨越了下一个字数阈值
+     * （consumed+offset 还没到、到段尾就到了），且剩余够长、还有卡片额度。
+     * 返回切点（段内绝对偏移），不适用返回 -1
+     **/
+    private static int cardSplitCut(String text, int offset, int consumed, int placed, int extraCards, int totalChars) {
+        if (placed >= extraCards || text.length() - offset < MIN_CARD_SPLIT_PARAGRAPH) {
+            return -1;
+        }
+        double threshold = totalChars * (placed + 1) / (double) (extraCards + 1);
+        int consumedBefore = consumed + offset;
+        int consumedAfter = consumed + text.length();
+        if (!(consumedBefore < threshold && consumedAfter >= threshold)) {
+            return -1;
+        }
+        return cardSplitPoint(text, offset, (int) Math.round(threshold - consumedBefore));
+    }
+
+    /**
+     * 段内插卡的切点：在目标位置（字数阈值落在段内的偏移，相对 {@code offset}）前后
+     * {@link #CARD_SPLIT_BAND} 字的窗口里，找离它最近的句末标点（切点在该标点之后）。
+     * 切点距已输出部分/段尾至少 {@link #CARD_SPLIT_EDGE} 字，保证每一段都还是"成段的正文"；
+     * 找不到返回 -1（退回段后插卡）。
+     * <p>
+     * 注意 target 是相对 offset 的偏移，搜索窗口必须先换算成段内绝对位置——
+     * 连续多刀时 offset 会推进，直接拿 target 当绝对下标会让切点越切越靠前
+     **/
+    private static int cardSplitPoint(String text, int offset, int target) {
+        int length = text.length();
+        int absTarget = offset + target;
+        int from = Math.max(offset + CARD_SPLIT_EDGE, absTarget - CARD_SPLIT_BAND);
+        int to = Math.min(length - CARD_SPLIT_EDGE, absTarget + CARD_SPLIT_BAND);
+        int best = -1;
+        for (int i = from; i <= to; i++) {
+            if (isSentenceEnd(text.charAt(i - 1))
+                    && (best < 0 || Math.abs(i - absTarget) < Math.abs(best - absTarget))) {
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 句末标点（shell 块切段与段内插卡共用）：句号 / 叹号 / 问号 / 分号 / 省略号
+     **/
+    private static boolean isSentenceEnd(char c) {
+        return c == '。' || c == '！' || c == '？' || c == '；' || c == '…';
     }
 
     /**
