@@ -350,9 +350,14 @@ public class MainUi implements ToolWindowFactory, DumbAware {
     private static final AtomicBoolean globalListenersInstalled = new AtomicBoolean(false);
 
     /**
-     * 老板键按住状态：只在"抬起 → 按下"的边沿触发，按住热键时系统的按键自动重复不会连续切换
+     * 老板键按住状态：记录"触发老板键的那个键码"，0 表示当前没有按住。
+     * <p>
+     * 只在按下沿触发一次，按住热键时系统的按键自动重复不会连续切换。
+     * 抬起时**只按记录的键码比较**，不去 instances 里找匹配的实例——否则按下期间项目被关闭
+     * （实例已移除）或热键被改掉时，抬起事件找不到匹配项，标志就永远停在"按住"，
+     * 老板键会一直失效到重启 IDE
      **/
-    private static volatile boolean bossKeyDown = false;
+    private static volatile int bossKeyHoldCode = 0;
 
     /**
      * 注册全局监听（只注册一次）：
@@ -380,23 +385,18 @@ public class MainUi implements ToolWindowFactory, DumbAware {
             int mask = InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK
                     | InputEvent.SHIFT_DOWN_MASK | InputEvent.META_DOWN_MASK;
             if (pressed) {
-                if (bossKeyDown) {
+                if (bossKeyHoldCode != 0) {
                     return;
                 }
                 for (MainUi ui : instances.values()) {
                     if (ui.matchesBossKey(keyEvent, mask)) {
-                        bossKeyDown = true;
+                        bossKeyHoldCode = keyEvent.getKeyCode();
                         ui.toggleBoss();
                     }
                 }
-            } else {
+            } else if (keyEvent.getKeyCode() == bossKeyHoldCode) {
                 // 抬起同一按键即复位（修饰键可能先松开，不能要求完全匹配），否则会漏掉下一次触发
-                for (MainUi ui : instances.values()) {
-                    if (ui.bossKeyCodeEquals(keyEvent)) {
-                        bossKeyDown = false;
-                        return;
-                    }
-                }
+                bossKeyHoldCode = 0;
             }
         }, AWTEvent.KEY_EVENT_MASK);
         ApplicationManager.getApplication().getMessageBus().connect()
@@ -416,11 +416,6 @@ public class MainUi implements ToolWindowFactory, DumbAware {
         return stroke != null
                 && keyEvent.getKeyCode() == stroke.getKeyCode()
                 && (keyEvent.getModifiersEx() & mask) == (stroke.getModifiers() & mask);
-    }
-
-    private boolean bossKeyCodeEquals(KeyEvent keyEvent) {
-        KeyStroke stroke = bossKeyStroke;
-        return stroke != null && keyEvent.getKeyCode() == stroke.getKeyCode();
     }
 
     @Override
@@ -1536,9 +1531,9 @@ public class MainUi implements ToolWindowFactory, DumbAware {
                 content = ioSupplier.get();
             } catch (Exception e) {
                 LOG.warn("读取工作区上下文失败", e);
-                final String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                // 界面上只显示固定话术：异常消息常带绝对路径 / 英文系统提示，贴进"助手回复"会露馅
                 ApplicationManager.getApplication().invokeLater(() -> {
-                    setNoticeText("无法读取当前工作区上下文：" + msg);
+                    setNoticeText(DisguiseContent.ERROR_READ_FAILED);
                     busy.set(false);
                     retryPendingRefresh();
                 });

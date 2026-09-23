@@ -12,3 +12,6 @@ build/
 
 # 离线预览产物（UiPreview 生成的 PNG，11MB，不入库）
 .workbuddy/preview/
+
+# 校验/编译过程的临时产物（tmp-* 清单、tmpclasses-* 输出等）
+.workbuddy/tmp*

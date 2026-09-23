@@ -107,6 +107,8 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - StateCheck 验证 thief-book.xml 新旧格式双向兼容（旧格式读入 → 各 getter 取值 → 回写属性/`<book>` 子元素一致、老配置只有 bookPath 时导入第一本书、全新状态走 getter 默认值）。**改 `PersistentState` 的注解或字段名前必须跑**。
 11. 图标快速核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/IconPreview.java 输出.png 8`。
    - 只把工具栏三个图标（复制/下载/刷新）画到一张放大 PNG，几秒出图。**UiPreview 近期在本机多次挂起时用它替代**；改 `AssistantIcons` 后先跑它看形状，再酌情跑完整 UiPreview + PngDiff。
+12. 分页边界核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/PagerEdgeCheck.java`。
+   - 补 `PagerCheck` 没覆盖的三种边界：首页继续"上一页"（页码不能变负）、**越界回退之后 `jumpTo` 的定位是否仍准确**（这条专门盯指针缓存被写坏）、CRLF 换行与 `jumpTo` 越界。与上面两条约定（`turnBack` 下限、缓存只在 `currentPage > 0` 时写）成对存在。
 
 ## GUI Designer（不要手改生成代码）
 - `src/main/java/com/thief/idea/ui/SettingUi.java` 中的 `$$$setupUI$$$()` 方法和实例初始化块 `{}` 由 **IntelliJ GUI Designer** 依据同目录 `SettingUi.form` 生成，文件内明确标注 `DO NOT EDIT`。改 UI 必须用 IDEA 的 GUI Designer 编辑 `.form`，不要直接改生成代码。
@@ -123,7 +125,8 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
 - **`BookPager`（分页引擎）**：持有页码、文件指针与 `seekDictionary` 指针缓存（**ConcurrentHashMap**，每 `CACHE_INTERVAL=200` 行缓存一个指针；EDT/IO/TTS 三类线程都会碰，不能换回 LinkedHashMap）。**页码约定：`currentPage` = 已读过的行数**（0 = 还没读），displayPage = currentPage / 每页行数，别按"当前页起始行"理解。
 - **线程模型**：翻页是"（可能重定位）+ 读取一页 + 推进页码"的**复合操作**，`turnNext/turnBack/jumpTo/reloadCurrent/countLines` 各自整体持同一把内部锁——手动翻页（后台线程池）与朗读取页（TTS 线程）交错调用不会"各推进半步"导致跳页。**不要**退化成只给单个方法加 synchronized（方法间隙仍可交错，老实现就是这么踩的）。`linesPerPage/lineSpacing` 与 `BookSource.toc()/imageDir()` 走 volatile 免锁：EDT 读它们不能被大书全量扫描 / epub 解包阻塞。
 - **读取走批量字节块**：`readLines()`/`appendLine()` 按 8KB 块读并切行（处理跨块残行、`\r\n`、末尾无换行行），`countLines()` 同样按字节块扫描换行符计数，读取完会把指针**回退到最后一条被统计行的结尾**。新代码不要用 `RandomAccessFile.readLine()` 逐行读（慢且带 ISO-8859-1 往返）。**改分页/跳页逻辑后必须跑 `.workbuddy/tools/PagerCheck.java`**（语义自测，注意 `jumpTo(N)` = 前 N 行已读、从第 N+1 行开始读）。
-- 读取异常**向上抛**（由 `MainUi.runIoAsync` 统一转成"无法读取当前工作区上下文"的说明文案），不要 catch 后把 `e.getMessage()` 当正文返回——异常文本混进"助手回复"里渲染会露馅。
+- **页码不能为负，`seekDictionary[0]` 只能表示文件开头**：`turnBack()` 的回退结果夹到 0，且 `readForwardLocked()` 只在 `currentPage > 0` 时才写缓存。这两条是配套的——`currentPage` 一旦被算成负数、又在读页时加回 0，写进去的 `seekDictionary[0]` 就变成"读完第 N 行之后"的位置，之后所有从该缓存起跳的 `jumpTo` 都会整体错页（实测跳页偏了一整页）。删任何一条都会让 `.workbuddy/tools/PagerEdgeCheck.java` 变红。
+- 读取异常**向上抛**（由 `MainUi.runIoAsync` 统一转成固定话术 `DisguiseContent.ERROR_READ_FAILED`），不要 catch 后把 `e.getMessage()` 返回或拼进提示——异常文本常带绝对路径与英文系统提示，混进"助手回复"里渲染会露馅。真实原因写 `LOG.warn` 即可。
 - `MainUi` 侧不再持有 seek/页码/编码等状态，翻页成功后的落地统一走 `applyPage()`（渲染 + 存进度 + 刷页码 + 同步目录高亮），不要再把这段回调复制到各处。
 
 ## 离线朗读（TTS，`src/main/java/com/thief/idea/tts/`）

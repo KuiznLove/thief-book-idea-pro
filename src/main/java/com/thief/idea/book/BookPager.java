@@ -144,17 +144,22 @@ public final class BookPager {
 
     /**
      * 上一页：页码回退一页后重新定位并读取（回退算法与旧 previousPage 一致：
-     * 恰好整页时回退两页——readForward 会再推进一页；非整页先回退到整页边界再减一页）
+     * 恰好整页时回退两页——readForward 会再推进一页；非整页先回退到整页边界再减一页）。
+     * <p>
+     * 回退结果夹到 0：页码是不能为负的——负值除了让 {@code displayPage()} 显示 "-1 / N"，
+     * 更糟的是 readForward 事后会把它加回正数并写进 {@code seekDictionary[0]}，
+     * 把"第 0 行的位置"写成"读完第 N 行之后"，之后所有从该缓存起跳的 jumpTo 都会整体错页。
+     * 调用方（MainUi 的"已经是第一条"守卫）本来就拦着用户路径，这里再兜一层
      **/
     public String turnBack() throws IOException {
         synchronized (lock) {
             if (currentPage % linesPerPage == 0) {
-                currentPage -= linesPerPage * 2;
+                currentPage = Math.max(0, currentPage - linesPerPage * 2);
             } else {
                 while (currentPage % linesPerPage != 0) {
                     currentPage--;
                 }
-                currentPage -= linesPerPage;
+                currentPage = Math.max(0, currentPage - linesPerPage);
             }
             countSeekLocked();
             return readForwardLocked();
@@ -241,7 +246,10 @@ public final class BookPager {
             int got = readLines(ra, str, linesPerPage, nStr.toString(), charset);
             currentPage += got;
             seek = ra.getFilePointer();
-            if (currentPage % CACHE_INTERVAL == 0) {
+            // currentPage 为 0 时不写缓存：0 号缓存项的语义是"文件开头"，
+            // 只由 countLines() 在确认位置为 0 时写入；这里的 seek 是"读完一页之后"的位置，
+            // 若页码因异常回退恰好落回 0，写进去会让后续 countSeekLocked 从错误偏移起跳（整体错页）
+            if (currentPage > 0 && currentPage % CACHE_INTERVAL == 0) {
                 seekDictionary.put(currentPage, seek);
             }
             // 去掉 UTF-8 BOM 字符

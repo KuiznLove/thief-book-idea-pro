@@ -95,6 +95,16 @@ public final class DisguiseContent {
     public static final String TOAST_BOOK = "请在设置中配置工作区目录";
 
     /**
+     * 读取失败时替换正文的说明话术。
+     * <p>
+     * 不要把异常消息（{@code e.getMessage()}）拼进来：{@code IOException} 常带绝对路径
+     * （"D:\\books\\xxx.txt (系统找不到指定的文件。)"）或英文系统提示，直接贴在"助手回复"里
+     * 既不像助手说的话、也把真实文件名暴露在伪装界面上。真实原因记 idea.log 即可
+     **/
+    public static final String ERROR_READ_FAILED = "无法读取当前工作区上下文。\n"
+            + "请确认文件仍在原来的位置，或在设置中重新配置工作区目录。";
+
+    /**
      * 未配置书本时窗口里的欢迎语，伪装成助手的自我介绍
      **/
     public static final String WELCOME = "你好，我是你的 AI 编码助手。\n"

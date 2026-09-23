@@ -13,6 +13,10 @@ IntelliJ IDEA 插件的"摸鱼阅读器"，但从 v0.1.7 起**外观伪装成 AI
   `E:/JetBrains/Toolbox/IntelliJ IDEA Ultimate/jbr/bin/javac.exe`（javac 25，平台 class 是字节码 69，JDK 17/21 读不了）+ `-cp "E:/JetBrains/Toolbox/IntelliJ IDEA Ultimate/lib/*"`；跑离线工具用 `jbr/bin/java.exe` + 平台目录的 `lib/*`。做法与排除清单见仓库 `AGENTS.md` 的"没有 Gradle 缓存 / 代理不可用时的替代校验"。
 
 ## 仓库约定
+- **版本历史**：`481ca58`（first commit，重构前：MainUi 1881 行自带 IO）→ `78b42cb`（v0.3.3：抽出 `book/BookPager`+`BookSource`、`PersistentState` 迁移到平台 `XmlSerializer`、稳定性修复）→ `3498e14`（图标修复）。要做"重构前后对比"就以 481ca58 为基线。
+- ⚠️ **本机 Git Bash 会吞掉 `git show <rev>^:<path>` 里的 `^`**（取到的是 `rev` 本身），会让人误判"某个改动早就存在"。先用 `git rev-parse <rev>^` 拿到哈希再取文件。
+- 跑 `.workbuddy/tools/` 下的 PagerCheck / StateCheck（需要 platform lib + epublib + jsoup）：用 node 扫 `~/.gradle/caches/modules-2/files-2.1` 找 `ideaIC-2023.3`、`epublib*.jar`、`jsoup*.jar`，拼 classpath 后再加 `build/classes/java/main`。
+- `BookPager.turnBack()` 目前**没有下限保护**：越界上一页会把 `currentPage` 弄成负数，并污染 `seekDictionary[0]`，使之后的 `jumpTo` 整体错位（实测 `jumpTo(10)` 返回 L21）。用户路径被 `MainUi` 的 `currentLine()/lineCount <= 1` 守卫挡住，改分页逻辑时留意——证据见 `.workbuddy/tools/PagerEdgeCheck.java`。
 - 源码文件统一 **CRLF**；新增文件请保持 CRLF。
 - 界面文案与注释用中文；UI 配色必须走 `AssistantTheme` 的 JBColor 配对，禁止写死颜色。
 - `SettingUi.form` / `SettingUi.java` 是 GUI Designer 生成物，一般不要手改；唯一例外是"每页行数"下拉（1~30）两处同步手工扩展过，改它要一起改。

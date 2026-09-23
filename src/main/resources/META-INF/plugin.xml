@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>com.thief.idea</id>
   <name>CodePilot</name>
-  <version>0.3.3</version>
+  <version>0.3.4</version>
   <vendor email="1340976576@qq.com" url="https://github.com/yisier/thief-book-idea">毅斯</vendor>
 
   <description>
@@ -46,6 +46,12 @@
 
   <change-notes>
     <![CDATA[
+      <h3>0.3.4</h3>
+      <ul>
+        <li>修复分页引擎缺少下限保护：越界"上一页"不再把页码推成负数，也不会污染文件指针缓存导致后续跳页整体错位</li>
+        <li>读取失败时界面只显示固定的助手话术（不再把异常原文与真实文件路径渲染进回复），真实原因写入 IDE 日志</li>
+        <li>老板键的按住状态不再依赖窗口实例：按下期间关闭项目或修改热键后不会卡住，避免老板键失效到重启 IDE</li>
+      </ul>
       <h3>0.3.3</h3>
       <ul>
         <li>稳定性修复：朗读与手动翻页同时进行时不再可能跳页；老板键按住不放不会连续切换界面</li>
