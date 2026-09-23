@@ -477,12 +477,16 @@ public class MainUi implements ToolWindowFactory, DumbAware {
     }
 
     /**
-     * 顶部伪装栏：左边是"AI 助手"品牌名，右边是页码与翻页/朗读图标
+     * 顶部伪装栏：左边是"AI 助手"品牌名，右边是页码与翻页/朗读图标。
+     * <p>
+     * 两栏合并成**一行**（{@link AssistantTheme.RowLayout}）而不是 WEST/EAST 两个 FlowLayout 面板：
+     * FlowLayout 只在"行带"内居中、行带又贴着容器顶，两组行带高度一不同就会错开几像素。
      **/
     private JPanel initHeaderBar() {
-        headerBar = new JPanel(new BorderLayout());
+        headerBar = new JPanel(new AssistantTheme.RowLayout(JBUI.scale(8)));
         headerBar.setOpaque(false);
-        headerBar.setBorder(JBUI.Borders.empty(7, JBUI.scale(14), 4, JBUI.scale(10)));
+        // 右边 12 = 原 FlowLayout 的 hgap 也加在行尾（10 + 2），保持观感不变
+        headerBar.setBorder(JBUI.Borders.empty(7, JBUI.scale(14), 4, JBUI.scale(12)));
 
         brandLabel = new JLabel(assistantName());
         brandLabel.setIcon(AssistantIcons.brand(JBUI.scale(17)));
@@ -520,12 +524,6 @@ public class MainUi implements ToolWindowFactory, DumbAware {
                 });
         tocToggleButton.setVisible(false);
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
-        left.setOpaque(false);
-        left.add(brandLabel);
-        left.add(tocToggleButton);
-        left.add(bookButton);
-
         pageLabel = new JLabel();
         pageLabel.setFont(AssistantTheme.uiFont(11));
         pageLabel.setForeground(AssistantTheme.MUTED);
@@ -553,16 +551,20 @@ public class MainUi implements ToolWindowFactory, DumbAware {
         bossButton.setFocusable(false);
         bossButton.addActionListener(e -> toggleBoss());
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0));
-        right.setOpaque(false);
-        right.add(pageLabel);
-        right.add(prevButton);
-        right.add(nextButton);
-        right.add(ttsButton);
-        right.add(bossButton);
-
-        headerBar.add(left, BorderLayout.WEST);
-        headerBar.add(right, BorderLayout.EAST);
+        // 整条顶栏是一行：左组（品牌 / 侧栏开关 / 会话）— 弹簧 — 右组（页码 / 上一条 / 下一条 / 朗读 / 老板键）。
+        // 间距靠 gapBefore 区分：组内 8，右组内 2；页码自带右侧 6 的内边距。
+        // 品牌前那 8px 是行首间距（原来的 FlowLayout 会在第一个子控件前也留 hgap，这里显式写出来保持观感不变）
+        AssistantTheme.RowLayout.gapBefore(brandLabel, JBUI.scale(8));
+        headerBar.add(brandLabel);
+        headerBar.add(tocToggleButton);
+        headerBar.add(bookButton);
+        headerBar.add(AssistantTheme.RowLayout.spring());
+        AssistantTheme.RowLayout.gapBefore(pageLabel, 0);
+        headerBar.add(pageLabel);
+        for (JComponent item : new JComponent[]{prevButton, nextButton, ttsButton, bossButton}) {
+            AssistantTheme.RowLayout.gapBefore(item, JBUI.scale(2));
+            headerBar.add(item);
+        }
         return headerBar;
     }
 

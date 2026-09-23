@@ -127,3 +127,55 @@ for (const [clsName, needle] of v032) {
   console.log((inClass(t, needle) ? '  OK  ' : ' MISS ') + clsName + ' 含 "' + needle + '"');
 }
 
+// v0.3.5：图标改用 Lucide 开源素材 + 按设备像素自绘（HiDPI 不糊）；
+// 顶部栏与底部工具栏由"左右两个 FlowLayout"改成单行 RowLayout（左右两组共用一条中心线）
+console.log('\n--- v0.3.5 图标素材 / RowLayout 对齐 ---');
+const v035Classes = [
+  'com/thief/idea/ui/AssistantIcons$SvgIcon.class',
+  'com/thief/idea/ui/AssistantTheme$RowLayout.class',
+  'com/thief/idea/ui/AssistantTheme$RowLayout$Spring.class',
+];
+for (const c of v035Classes) {
+  console.log((innerJar.entries.some(e => e.name === c) ? '  OK  ' : ' MISS ') + c);
+}
+const v035 = [
+  // 图标：从资源加载 SVG + 按绘制时的变换倍数自己光栅化。
+  // ⚠️ SVGLoader / getTransform 都写在内部类 SvgIcon 里（内部类是独立 class 文件），
+  // 在 AssistantIcons.class 里找永远是 MISS——这里必须写 $SvgIcon
+  ['ui/AssistantIcons', 'icons/lucide/'],
+  ['ui/AssistantIcons$SvgIcon', 'SVGLoader'],
+  ['ui/AssistantIcons$SvgIcon', 'getTransform'],
+  // 对齐：单行布局 + 内置弹簧 + 前置间距（同样在内部类 RowLayout 里）
+  ['ui/AssistantTheme', 'RowLayout'],
+  ['ui/AssistantTheme$RowLayout', 'gapBefore'],
+  ['ui/AssistantTheme$RowLayout', 'thief.rowGapBefore'],
+  ['ui/AssistantTheme$RowLayout', 'spring'],
+  ['MainUi', 'RowLayout'],
+  ['MainUi', 'gapBefore'],
+  ['ui/ChatInputBar', 'RowLayout'],
+  ['ui/ChatInputBar', 'gapBefore'],
+];
+for (const [clsName, needle] of v035) {
+  const entry = innerJar.entries.find(e => e.name.endsWith(clsName + '.class'));
+  if (!entry) { console.log(' MISS ' + clsName + '.class'); continue; }
+  const t = innerJar.data(entry.lho).toString('latin1');
+  console.log((inClass(t, needle) ? '  OK  ' : ' MISS ') + clsName + ' 含 "' + needle + '"');
+}
+
+// v0.3.5 替换掉的旧实现：图标不该再走"画完按 alpha 染色"（SrcIn），
+// 也不该再有把 FontMetrics 搬来搬去的旧图标工厂
+console.log('\n--- v0.3.5 旧实现应消失 ---');
+{
+  const entry = innerJar.entries.find(e => e.name === 'com/thief/idea/ui/AssistantIcons.class');
+  const t = entry ? innerJar.data(entry.lho).toString('latin1') : '';
+  for (const needle of ['SrcIn', 'AlphaComposite']) {
+    console.log((inClass(t, needle) ? ' STALE' : '  ok  ') + 'ui/AssistantIcons 不含 "' + needle + '"');
+  }
+}
+
+// 图标素材必须真的打进包里（少一个图标就会在界面上显示为空白，而"空白"在预览图上不明显）
+const lucide = innerJar.entries.filter(e => /^icons\/lucide\/.+\.svg$/.test(e.name));
+console.log('\n--- 图标素材 ---');
+console.log('  lucide svg 共 ' + lucide.length + ' 个' + (lucide.length >= 14 ? '  OK' : '  MISS'));
+console.log((innerJar.entries.some(e => e.name === 'icons/lucide/LICENSE') ? '  OK  ' : ' MISS ') + 'icons/lucide/LICENSE');
+

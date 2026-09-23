@@ -1,24 +1,79 @@
 package com.thief.idea.ui;
 
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.SVGLoader;
+
 import javax.swing.*;
 import java.awt.*;
-import java.awt.geom.Arc2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 伪装界面用到的矢量图标。
+ * 伪装界面用到的图标。
  * <p>
- * 全部用 Graphics2D 手绘，不依赖字体中的特殊符号（"@"、"↑" 这类字符在部分系统字体里会变成方框），
- * 也不依赖平台内置图标集，避免版本差异导致编译期或运行期缺图标。
+ * 形状取自开源图标集 <b>Lucide</b>（ISC License，原件与许可见 {@code resources/icons/lucide/}）。
+ * 不使用平台内置图标集，避免版本差异导致编译期或运行期缺图标；也不依赖字体里的特殊符号
+ * （"↑"、"@" 这类字符在部分系统字体里会变成方框）。
+ * <p>
+ * <b>品牌标记与文件角标仍是手绘</b>（{@link #brand(int)} / {@link #fileBadge}）：素材里没有
+ * "品牌图形"与"文字角标"的对应物。
+ * <p>
+ * <b>为什么自己光栅化</b>：这里的图标颜色是运行时传入的（悬停变色、朗读激活、侧栏展开状态），
+ * 而 2023.3 平台没有"给插件图标染任意色"的公开 API（{@code IconManager.colorize} 需要平台自己的
+ * 图标解析链路，把 {@code IconLoader} 加载的图标染一下反而会丢掉它的分辨率信息），官方文档给的
+ * 也只是 {@code _dark} / {@code @2x} 这类静态变体。所以本类直接读 SVG 源码、在<b>矢量层面</b>替换颜色，
+ * 再按<b>绘制时的缩放倍数</b>光栅化（见 {@link SvgIcon}）——既保留原有 API（16 个调用点不用改），
+ * 也不必为明暗主题各存一份资源：颜色来自 {@link AssistantTheme} 的 JBColor，主题切换自然跟随。
  **/
 public final class AssistantIcons {
+
+    private static final Logger LOG = Logger.getInstance(AssistantIcons.class);
+
+    /**
+     * Lucide 图标所在目录（resources 根下）
+     **/
+    private static final String SVG_DIR = "/icons/lucide/";
+
+    /**
+     * Lucide 资源统一是 24×24 视框，光栅化时的 scale 是相对它的倍数
+     **/
+    private static final float INTRINSIC_SIZE = 24f;
+
+    /**
+     * SVG 源码里被替换的颜色（Lucide 的描边色）
+     **/
+    private static final String SOURCE_COLOR = "#000000";
+
+    /**
+     * 光栅化结果缓存：同一个图标会被界面反复请求（多个按钮、每次翻页重绘）。
+     * key = 图标名 + 像素尺寸 + 颜色（像素尺寸按绘制倍数变化，故同一逻辑尺寸下可能有几份）
+     **/
+    private static final Map<String, Image> RASTERS = new ConcurrentHashMap<>();
+
+    /**
+     * SVG 源码缓存（按图标名），只在首次读取
+     **/
+    private static final Map<String, byte[]> SOURCES = new ConcurrentHashMap<>();
+
+    /**
+     * 渲染失败的 key，避免每帧重试并刷日志
+     **/
+    private static final Set<String> BROKEN = ConcurrentHashMap.newKeySet();
+
+    private static final byte[] MISSING = new byte[0];
 
     private AssistantIcons() {
     }
 
     /**
-     * 在 16x16 网格上绘制的图标回调
+     * 在 16x16 网格上绘制的图标回调（手绘图标用）
      **/
     public interface Painter {
         void paint(Graphics2D g, int size, Color color);
@@ -26,6 +81,130 @@ public final class AssistantIcons {
 
     public static Icon icon(int size, Color color, Painter painter) {
         return new VectorIcon(size, color, painter);
+    }
+
+    /**
+     * 加载 Lucide 图标并染成指定颜色
+     **/
+    public static Icon svg(String name, int size, Color color) {
+        return new SvgIcon(name, size, color);
+    }
+
+    /**
+     * 由 SVG 资源渲染的图标。
+     * <p>
+     * <b>HiDPI 的关键</b>：位图必须按"绘制时的缩放倍数"光栅化，并以<b>逻辑尺寸</b>落笔，这样位图与
+     * 设备像素正好 1:1——否则 Swing 会把小位图插值放大，图标就是糊的（v0.3.4 踩过：16px 的位图在
+     * 2x 屏上被拉成 32 设备像素）。
+     * <ul>
+     *   <li>{@code t} = 绘制时 Graphics 的缩放倍数（JRE HiDPI 模式下即设备倍数，如 2.0；否则为 1.0）；</li>
+     *   <li>光栅化尺寸 = {@code size × t} 像素；</li>
+     *   <li>落笔尺寸 = {@code size} 逻辑单位 → 设备上占 {@code size × t} 像素，与位图 1:1。</li>
+     * </ul>
+     * 上式在两种 HiDPI 模式下都成立，所以不需要判断当前用的是哪一种。
+     * <p>
+     * 颜色在矢量层面替换（把 SVG 源码里的 {@code #000000} 换成目标色）：抗锯齿由渲染器按最终颜色计算，
+     * 边缘比"先画黑、再按 alpha 染色"更干净，也省掉一次全图合成。
+     **/
+    private static final class SvgIcon implements Icon {
+
+        private final String name;
+        private final int size;
+        private final Color color;
+
+        SvgIcon(String name, int size, Color color) {
+            this.name = name;
+            this.size = size;
+            this.color = color;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Image raster = raster(Math.max(1, Math.round(size * graphicsScale(g))));
+            if (raster != null) {
+                g.drawImage(raster, x, y, size, size, null);
+            }
+        }
+
+        /**
+         * 绘制时 Graphics 的缩放倍数（1.0 = 无缩放）
+         **/
+        private static float graphicsScale(Graphics g) {
+            if (g instanceof Graphics2D) {
+                double scale = Math.abs(((Graphics2D) g).getTransform().getScaleX());
+                if (scale > 0.01) {
+                    return (float) scale;
+                }
+            }
+            return 1f;
+        }
+
+        /**
+         * 取指定像素尺寸的位图（带缓存）
+         **/
+        private Image raster(int pixels) {
+            String key = name + '@' + pixels + '#' + Integer.toHexString(color.getRGB());
+            Image cached = RASTERS.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            if (BROKEN.contains(key)) {
+                return null;
+            }
+            Image rendered = render(pixels);
+            if (rendered == null) {
+                BROKEN.add(key);
+            } else {
+                RASTERS.put(key, rendered);
+            }
+            return rendered;
+        }
+
+        /**
+         * 取 SVG 源码 → 换色 → 按目标像素尺寸光栅化
+         **/
+        private Image render(int pixels) {
+            byte[] svg = source();
+            if (svg == MISSING) {
+                return null;
+            }
+            String text = new String(svg, StandardCharsets.UTF_8)
+                    .replace(SOURCE_COLOR, String.format("#%06X", color.getRGB() & 0xFFFFFF));
+            try (InputStream in = new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8))) {
+                return SVGLoader.load(in, pixels / INTRINSIC_SIZE);
+            } catch (IOException | RuntimeException e) {
+                LOG.warn("图标渲染失败：" + name + " @" + pixels + "px - " + e);
+                return null;
+            }
+        }
+
+        /**
+         * 读取 SVG 源码（缓存；读不到时返回 {@link #MISSING} 并只报一次）
+         **/
+        private byte[] source() {
+            return SOURCES.computeIfAbsent(name, key -> {
+                try (InputStream in = AssistantIcons.class.getResourceAsStream(SVG_DIR + key + ".svg")) {
+                    if (in == null) {
+                        LOG.warn("图标资源缺失：" + SVG_DIR + key + ".svg");
+                        return MISSING;
+                    }
+                    return in.readAllBytes();
+                } catch (IOException e) {
+                    LOG.warn("图标资源读取失败：" + SVG_DIR + key + ".svg - " + e);
+                    return MISSING;
+                }
+            });
+        }
     }
 
     private static final class VectorIcon implements Icon {
@@ -95,190 +274,64 @@ public final class AssistantIcons {
      * 向上箭头（发送 / 继续）
      **/
     public static Icon arrowUp(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.draw(new java.awt.geom.Line2D.Float(8 * u, 13 * u, 8 * u, 4 * u));
-            Path2D head = new Path2D.Float();
-            head.moveTo(4.6f * u, 7.4f * u);
-            head.lineTo(8 * u, 4 * u);
-            head.lineTo(11.4f * u, 7.4f * u);
-            g.draw(head);
-        });
+        return svg("arrow-up", size, color);
     }
 
     public static Icon copy(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            // 背面纸张只露出不被前页遮住的部分：左边线从前页顶边（y=5.5）起笔，
-            // 底边画到前页右边线（x=10.5）为止——都不伸进前页轮廓，
-            // 否则会穿过前页边线，看起来像两个完整的方框叠在一起
-            Path2D back = new Path2D.Float();
-            back.moveTo(5.5f * u, 5.5f * u);
-            back.lineTo(5.5f * u, 2.5f * u);
-            back.lineTo(13.5f * u, 2.5f * u);
-            back.lineTo(13.5f * u, 10.5f * u);
-            back.lineTo(10.5f * u, 10.5f * u);
-            g.draw(back);
-            g.draw(new RoundRectangle2D.Float(2.5f * u, 5.5f * u, 8 * u, 8 * u, 1.6f * u, 1.6f * u));
-        });
+        return svg("copy", size, color);
     }
 
     public static Icon download(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.draw(new java.awt.geom.Line2D.Float(8 * u, 2.5f * u, 8 * u, 10.5f * u));
-            Path2D head = new Path2D.Float();
-            head.moveTo(4.8f * u, 7.3f * u);
-            head.lineTo(8 * u, 10.6f * u);
-            head.lineTo(11.2f * u, 7.3f * u);
-            g.draw(head);
-            Path2D tray = new Path2D.Float();
-            tray.moveTo(3.2f * u, 11.8f * u);
-            tray.lineTo(3.2f * u, 13.6f * u);
-            tray.lineTo(12.8f * u, 13.6f * u);
-            tray.lineTo(12.8f * u, 11.8f * u);
-            g.draw(tray);
-        });
+        return svg("download", size, color);
     }
 
     public static Icon refresh(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.draw(new Arc2D.Float(3 * u, 3 * u, 10 * u, 10 * u, 70, 280, Arc2D.OPEN));
-            Path2D head = new Path2D.Float();
-            head.moveTo(11.4f * u, 2.6f * u);
-            head.lineTo(12.4f * u, 5.6f * u);
-            head.lineTo(9.4f * u, 5.2f * u);
-            head.closePath();
-            g.fill(head);
-        });
+        return svg("refresh-cw", size, color);
     }
 
     public static Icon check(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            Path2D path = new Path2D.Float();
-            path.moveTo(3.4f * u, 8.6f * u);
-            path.lineTo(6.6f * u, 11.6f * u);
-            path.lineTo(12.6f * u, 4.4f * u);
-            g.draw(path);
-        });
+        return svg("check", size, color);
     }
 
     /**
-     * 实心播放三角：shell 代码块右上角 "Run" 按钮用（与 diff 卡片的 "Apply" 对勾区分开）
+     * 实心播放三角：shell 代码块右上角 "Run" 按钮用（与 diff 卡片的 "Apply" 对勾区分）
      **/
     public static Icon play(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            Path2D path = new Path2D.Float();
-            path.moveTo(4.6f * u, 3.2f * u);
-            path.lineTo(12.4f * u, 8f * u);
-            path.lineTo(4.6f * u, 12.8f * u);
-            path.closePath();
-            g.fill(path);
-        });
+        return svg("play", size, color);
     }
 
     public static Icon chevronDown(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            Path2D path = new Path2D.Float();
-            path.moveTo(4.4f * u, 6.4f * u);
-            path.lineTo(8 * u, 10 * u);
-            path.lineTo(11.6f * u, 6.4f * u);
-            g.draw(path);
-        });
+        return svg("chevron-down", size, color);
     }
 
     public static Icon chevronLeft(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            Path2D path = new Path2D.Float();
-            path.moveTo(9.6f * u, 4.4f * u);
-            path.lineTo(6 * u, 8 * u);
-            path.lineTo(9.6f * u, 11.6f * u);
-            g.draw(path);
-        });
+        return svg("chevron-left", size, color);
     }
 
     public static Icon chevronRight(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            Path2D path = new Path2D.Float();
-            path.moveTo(6.4f * u, 4.4f * u);
-            path.lineTo(10 * u, 8 * u);
-            path.lineTo(6.4f * u, 11.6f * u);
-            g.draw(path);
-        });
+        return svg("chevron-right", size, color);
     }
 
     /**
-     * 喇叭图标：朗读中带两道声波，未朗读只有一道
+     * 喇叭图标：朗读中用两道声波（volume-2），未朗读用一道（volume-1）
      **/
     public static Icon speaker(int size, Color color, boolean active) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.fill(new RoundRectangle2D.Float(2.2f * u, 6 * u, 3.4f * u, 4 * u, 1f * u, 1f * u));
-            Path2D cone = new Path2D.Float();
-            cone.moveTo(5.6f * u, 6 * u);
-            cone.lineTo(9 * u, 3 * u);
-            cone.lineTo(9 * u, 13 * u);
-            cone.lineTo(5.6f * u, 10 * u);
-            cone.closePath();
-            g.fill(cone);
-            g.draw(new Arc2D.Float(6.6f * u, 4.6f * u, 7 * u, 6.8f * u, -55, 110, Arc2D.OPEN));
-            if (active) {
-                g.draw(new Arc2D.Float(7.4f * u, 2.6f * u, 11 * u, 10.8f * u, -55, 110, Arc2D.OPEN));
-            }
-        });
+        return svg(active ? "volume-2" : "volume-1", size, color);
     }
 
     /**
      * 图片图标（"插入图片"按钮）
      **/
     public static Icon image(int size, Color color) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.draw(new RoundRectangle2D.Float(2.2f * u, 3.4f * u, 11.6f * u, 9.2f * u, 2f * u, 2f * u));
-            g.fill(new java.awt.geom.Ellipse2D.Float(4.8f * u, 5.5f * u, 2f * u, 2f * u));
-            Path2D hill = new Path2D.Float();
-            hill.moveTo(3.6f * u, 11.6f * u);
-            hill.lineTo(7 * u, 8.2f * u);
-            hill.lineTo(9.2f * u, 10.3f * u);
-            hill.lineTo(11f * u, 8.5f * u);
-            hill.lineTo(13f * u, 10.6f * u);
-            g.draw(hill);
-        });
+        return svg("image", size, color);
     }
 
     /**
-     * 侧栏开关图标：外框 + 左列。
-     * expanded=true 表示侧栏正展开（左列填实），false 表示已收起（左列只留一条描边），
-     * 与 IDE 里"收起/展开侧边栏"的按钮样式一致。
+     * 侧栏开关图标：展开中显示"可收起"（panel-left-close），已收起显示"可展开"（panel-left），
+     * 与 IDE 里"收起/展开侧边栏"按钮的图标语义一致
      **/
     public static Icon sidebar(int size, Color color, boolean expanded) {
-        return icon(size, color, (g, s, c) -> {
-            float u = s / 16f;
-            g.setColor(c);
-            g.draw(new RoundRectangle2D.Float(2.2f * u, 3.4f * u, 11.6f * u, 9.2f * u, 2.2f * u, 2.2f * u));
-            if (expanded) {
-                g.fill(new RoundRectangle2D.Float(3.5f * u, 4.7f * u, 3f * u, 6.6f * u, 1.1f * u, 1.1f * u));
-            } else {
-                g.draw(new java.awt.geom.Line2D.Float(5.2f * u, 4.7f * u, 5.2f * u, 11.3f * u));
-            }
-        });
+        return svg(expanded ? "panel-left-close" : "panel-left", size, color);
     }
 
     /**

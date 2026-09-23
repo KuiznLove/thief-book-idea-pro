@@ -275,12 +275,12 @@ public class UiPreview {
     }
 
     /**
-     * 顶部伪装栏（与 MainUi.initHeaderBar 一致的外观）
+     * 顶部伪装栏（与 MainUi.initHeaderBar 一致的外观：整条栏一行排开，RowLayout 共用中心线）
      **/
     private static JComponent headerBar(boolean sidebarExpanded) {
-        JPanel bar = new JPanel(new BorderLayout());
+        JPanel bar = new JPanel(new AssistantTheme.RowLayout(JBUI.scale(8)));
         bar.setOpaque(false);
-        bar.setBorder(JBUI.Borders.empty(7, JBUI.scale(14), 4, JBUI.scale(10)));
+        bar.setBorder(JBUI.Borders.empty(7, JBUI.scale(14), 4, JBUI.scale(12)));
 
         JLabel brand = new JLabel("CodePilot");
         brand.setIcon(AssistantIcons.brand(JBUI.scale(17)));
@@ -298,26 +298,26 @@ public class UiPreview {
         session.setIconTextGap(JBUI.scale(3));
         session.setBorder(JBUI.Borders.empty(2, JBUI.scale(6), 2, JBUI.scale(4)));
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
-        left.setOpaque(false);
-        left.add(brand);
-        left.add(sidebar);
-        left.add(session);
-
         JLabel pageLabel = new JLabel("18 / 934");
         pageLabel.setFont(AssistantTheme.uiFont(11));
         pageLabel.setForeground(AssistantTheme.MUTED);
         pageLabel.setBorder(JBUI.Borders.empty(0, 0, 0, JBUI.scale(6)));
 
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0));
-        right.setOpaque(false);
-        right.add(pageLabel);
-        right.add(iconButton(AssistantIcons.chevronLeft(JBUI.scale(15), AssistantTheme.MUTED)));
-        right.add(iconButton(AssistantIcons.chevronRight(JBUI.scale(15), AssistantTheme.MUTED)));
-        right.add(iconButton(AssistantIcons.speaker(JBUI.scale(15), AssistantTheme.MUTED, false)));
+        JComponent prev = iconButton(AssistantIcons.chevronLeft(JBUI.scale(15), AssistantTheme.MUTED));
+        JComponent next = iconButton(AssistantIcons.chevronRight(JBUI.scale(15), AssistantTheme.MUTED));
+        JComponent speaker = iconButton(AssistantIcons.speaker(JBUI.scale(15), AssistantTheme.MUTED, false));
 
-        bar.add(left, BorderLayout.WEST);
-        bar.add(right, BorderLayout.EAST);
+        AssistantTheme.RowLayout.gapBefore(brand, JBUI.scale(8));
+        bar.add(brand);
+        bar.add(sidebar);
+        bar.add(session);
+        bar.add(AssistantTheme.RowLayout.spring());
+        AssistantTheme.RowLayout.gapBefore(pageLabel, 0);
+        bar.add(pageLabel);
+        for (JComponent item : new JComponent[]{prev, next, speaker}) {
+            AssistantTheme.RowLayout.gapBefore(item, JBUI.scale(2));
+            bar.add(item);
+        }
         return bar;
     }
 

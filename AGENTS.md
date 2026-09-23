@@ -7,6 +7,9 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
 - 构建入口：`./gradlew buildPlugin`，产物在 `build/distributions/thief-book-idea-<version>.zip`；单独打 jar 用 `./gradlew jar`。
 - 本地起沙箱调试：`./gradlew runIde`（会自动下载 IntelliJ Platform 到 `~/.gradle` 缓存）。
 - 修改后请运行 `./gradlew build` 验证编译与打包。
+- **打新包不要动旧包**（用户明确要求过）：`buildPlugin` 覆盖同名 `thief-book-idea-<version>.zip`，所以**出包前先把旧包按时间戳备份**，出包后再把新包存一份带时间戳的副本，例如
+  `thief-book-idea-0.3.4.zip` 出包前 → `thief-book-idea-0.3.4-20260923-165741.zip` 备份；出包后 → `thief-book-idea-0.3.4-20260923-170347.zip` 留档。备份/复制用 Python（`shutil.copy2`）而不是 `cp`（Git Bash 缺 coreutils）。
+- **`buildPlugin` 偶发 `journal-1.lock (拒绝访问)`**（`~/.gradle/caches/journal-1/journal-1.lock`；`--stop` 显示"No Gradle daemons are running"也会出现，通常是杀软/句柄残留）：重试一次、或加 `--no-daemon` 就过了（实测 53s BUILD SUCCESSFUL）。**不要删那个 lock 文件**。
 
 ## 环境要求
 - **JDK 17**：Gradle 守护进程使用 JDK 17（在 `gradle.properties` 的 `org.gradle.java.home` 中指定本机路径，路径不同请修改，当前为 `D:/Program Files/java/jdk-17.0.7`）。用 JDK 8/11 会因平台类字节码版本报错。
@@ -23,6 +26,11 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - `srcs.txt` 就是一份 `src/main/java/**/*.java` 清单（`-encoding UTF-8` 不能省，否则中文注释按 GBK 解码报错）。
    - `EpubUtil.java` 依赖 epublib（见 `build.gradle`），平台 lib 里没有，会报"程序包 nl.siegmann.epublib 不存在"；把 `EpubUtil.java` 以及引用它的 `book/BookSource.java`、`MainUi.java`、`Setting.java`、`ShowThiefBook.java` 一起从清单里去掉，剩下的文件应当零错误。也可以把 gradle 缓存里的 epublib/jsoup jar 加进 `-cp` 直接编全量（`find ~/.gradle/caches/modules-2 -iname "epublib*.jar"`）。
    - 只想确认某个平台 API 存在 / 签名对不对时，写个几行的临时类调一下再编译，比翻文档快（可参考 `.workbuddy/tools/` 下的独立小工具写法）。
+   - **查平台 API 签名**：`E:/JetBrains/Toolbox/IntelliJ IDEA Ultimate/jbr/bin` 里**没有 `javap.exe`**（只有 `javac.exe`/`java.exe`；该 IDE 已升到 IU-262），用 JDK 17 的：
+     `"D:/Program Files/java/jdk-17.0.7/bin/javap.exe" -c -p -cp "<平台目录>/lib/<某个.jar>" com.intellij.xxx.Yyy`
+     - **本项目目标平台 2023.3 的 class 是 Java 17 字节码**（上面说的"版本 69"是*已装 IDEA* 那套，别混）：`~/.gradle/caches/modules-2/files-2.1/com.jetbrains.intellij.idea/ideaIC/2023.3/<hash>/ideaIC-2023.3` 就是那套 jar，**JDK 17 的 javac/javap 都能读**，离线小工具编译（`-cp "<平台目录>/lib/*;src/main/resources"`）也用它，不必去找 JBR。
+     - `javap` 的 `-cp "<目录>/*"` 通配符**不生效**（静默输出空）：要么 `cd` 到 lib 目录后用 `;` 拼 jar 名，要么显式列出 jar。**找不到类时它同样会一声不响地返回空**，别把空输出当成"这个方法不存在"。
+     - 想先知道"某个类在哪个 jar"，扫 jar 字节串最快（`node` 读 `lib/*.jar` 找 `com/intellij/.../Xxx.class`）；但那只证明**有引用**，要确认关键类仍得真去列 zip 条目。
 
 ## 发布（GitHub Release，仓库 `KuiznLove/thief-book-idea-pro`）
 1. 升版本号**两处**：`build.gradle` 的 `version` 默认值 + `plugin.xml` 的 `<version>`。
@@ -54,7 +62,18 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
   - **代码片段按语言分三组**：`PYTHON_SNIPPETS`（图网络/训练）/ `JAVA_SNIPPETS`（Spring Boot 智能客服）/ `VUE_SNIPPETS`（Vue 3 + TS），每组 8 个（与 `AssistantPageView.MAX_EXTRA_CARDS + 1` 对齐）。`snippet(language, seed, index)` 用 `+ index` 取模，保证同页 index 不同必然取到不同片段。**加新语言（或给某组减量）时必须保证组内数量 ≥ 页内最大卡片数**，否则同一页会出现两张一模一样的卡片。语言常量、下拉项白名单在 `LANGUAGES`，未知值一律回退 Python。
   - 素材行长度保持在 64 字符内（等宽字体下不折行），这是"看起来像真实 diff"的关键；文件角标 4 个字母以内（`PY` / `YAML` / `JAVA` / `VUE` / `TS`）。
 - 样式集中在 `com.thief.idea.ui.AssistantTheme`：**所有颜色都按"亮色/暗色"配对定义（JBColor）**，禁止在业务代码里写死颜色；字体走 `UIUtil.getFontWithFallback`（保证中文不出方框）。`GlyphButton`/`RoundedPanel` 也在这里。
-- 矢量图标在 `com.thief.idea.ui.AssistantIcons`（手绘 Graphics2D，不依赖平台图标集与字体符号）。工具窗口图标 `icons/assistant.png` + `assistant@2x.png` 由 `.workbuddy/tools/IconGen.java` 生成（`java IconGen.java src/main/resources/icons`）。
+- 图标在 `com.thief.idea.ui.AssistantIcons`：形状取自开源图标集 **Lucide**（ISC License），放在 `src/main/resources/icons/lucide/*.svg`。**品牌标记 `brand` 与文件角标 `fileBadge` 仍是手绘 Graphics2D**（素材里没有对应物）。
+  - **读 SVG 源码 → 在矢量层面换色 → 按绘制倍数光栅化**（`AssistantIcons$SvgIcon`）。颜色是**运行时传入**的（悬停、朗读激活、侧栏状态），2023.3 平台没有"给插件图标染任意色"的公开 API（`IconManager.colorize` 要配合平台自己的图标解析链路，官方文档只给 `_dark`/`@2x` 静态变体），所以自己渲染：把源码里的 `#000000` 替换成目标色再交给 `com.intellij.util.SVGLoader.load(is, scale)`。**不要退回 `IconLoader.getIcon` + `AlphaComposite.SrcIn` 那套**（v0.3.4 的"图标糊"就是它）：平台图标在无 Application 的离线工具里根本解析不出来（`getIconWidth()` 返回 0），而且染完色位图就成了固定分辨率的死图。
+  - ⚠️ **HiDPI 铁律（这是"糊"的唯一根因，别改坏）**：位图按 **`size × 绘制时 Graphics 的缩放倍数`** 光栅化，落笔时**仍用逻辑尺寸 `size`**——这样设备像素与位图 1:1。
+    - `t` = `((Graphics2D) g).getTransform().getScaleX()`（JRE HiDPI 模式下就是设备倍数，如 2.0；否则 1.0）；
+    - 光栅化 = `size × t` 像素；`g.drawImage(raster, x, y, size, size, null)`；
+    - 于是两种 HiDPI 模式（Graphics 已缩放 / 未缩放）都正确，**不需要判断当前是哪种**；
+    - 位图按 `(图标, 像素尺寸, 颜色)` 缓存，翻页重绘不重复光栅化。
+    - 反面教材：生成一张 `size` px 的位图交给 `ImageIcon` → Swing 在 2x 屏上把它插值放大到 `2×size` 设备像素 → 糊。
+  - 也**不要**改用平台内置图标集（`AllIcons`）：New UI 下平台会把图标内容色改成白色，且升级平台时图标常量可能改名。
+  - SVG 已统一处理过：`stroke="currentColor"` → `#000000`、`stroke-width` 2 → 2.5（Lucide 是 24×24 视框，画到 15~16px 时 2px 描边偏细）。`play.svg` 额外加了 `fill` 变成实心三角（Run 按钮一直用实心，与 Apply 的对勾区分）。**换色的前提就是这批文件里只有 `#000000` 这一种描边色**，改素材时要复查。
+  - 改完图标必须跑 `.workbuddy/tools/IconHiDpiCheck.java`（量化清晰度，见下）+ `IconGallery`（全量总览核对形状统一性）。
+- 工具窗口图标 `icons/assistant.png` + `assistant@2x.png` 由 `.workbuddy/tools/IconGen.java` 生成（`java IconGen.java src/main/resources/icons`）。
 - 阅读页渲染在 `com.thief.idea.ui.AssistantPageView`：`render(正文, seed, 字体, 段间距, 语言)` 输出 开场白 + 顶部 diff 卡片 + 段落之间穿插的卡片（带小标题）+ 结尾话术。正文里的英文/数字会被渲染成灰底行内代码块。**seed 只由 `bookFile + currentPage` 派生**（`MainUi.pageSeed()`），保证同一页刷新/老板键恢复时渲染结果一致，翻页才换一批。
   - **卡片分布按"累计字数"，不是按"第几段"**：`CHARS_PER_CARD = 250`（约等于一屏正文的字数）决定疏密，`MAX_EXTRA_CARDS = 7` 是上限——加上顶部那张正好用满 `DisguiseContent` 的 8 个片段，再多就会同页出现重复卡片。段落长短差异极大（长段能占满一屏、短段只有一行），按段落序号均分会造成"整屏都是正文、看不到代码块"（用户报过这个问题），改这两个常量前先估一下"一屏正文大约多少字"。
   - **单行 shell 块是另一套独立逻辑**（`shellSlots()` / `splitPoint()` / `shellBlock()` / `shellBody()`，素材在 `DisguiseContent.SHELL_SCRIPTS`，**不随代码语言切换**，由设置页开关 `PersistentState.shellBlockEnabled` 控制）：它不像 diff 卡片那样落在段落*之间*，而是把一个自然段从中间**切开**插进去。约束有四条，别拆：
@@ -89,13 +108,20 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
   - 侧栏开关（`MainUi.tocToggleButton` + `AssistantIcons.sidebar(size, color, expanded)`）伪装成 IDE 的"收起侧边栏"图标：**只有 epub 且有目录时才出现**，点击走 `toggleToc()` 收起/展开左侧"历史记录"，折叠状态存在 `PersistentState.tocCollapsed`（"1"/"0"，重启后保持）；图标按状态切换——展开态左列填实、收起态只留一条描边。收起后正文区变宽，由 `AssistantPageView` 的 `componentResized → applyContentWidth()` 自动按新宽度重算换行，不要在 `MainUi` 里手工改段落宽度。
   - 不要把这个开关挂到底部输入框的发送键上：发送键必须保持"下一页"语义，否则伪装会露馅。
 - 左侧 epub 目录面板伪装成"历史记录"（可被上面的侧栏开关收起）。老板键（Ctrl+3）隐藏时：顶部栏/输入框/左侧列表全部收起，滚动区换成 `bossView()` 的假 Terminal 输出，Tab 标题改 "Terminal"、图标改 Console；恢复时换回 `pageView` 并 `renderCurrent()` 重绘当前页。
+- **顶部栏与底部输入框工具栏都只用一条 `AssistantTheme.RowLayout`，不要再写成"左侧一个 `FlowLayout` + 右侧一个 `FlowLayout` + 中间留白"的两段式**：
+  - 症状：顶部栏左右两组图标、底部工具栏左右两组图标"从高度上没对齐"（用户报过）。根因是 `FlowLayout` 只把自己**那一行**的子组件按"行内最高元素"居中，左右两个面板各自算标高，**两侧最大高度只要不同**（字号 / DPI 缩放 / 图标尺寸任一不同就会不同）两组中心线就错开。用户 HiDPI 环境实测顶部栏两侧中线差约 6 设备像素、底部工具栏约 13 设备像素。
+  - **本机 1x 离线复现不出来**（`HeaderProbe` 在 1.5x 下所有控件中线都是 27.0~27.5，看着完全对齐），所以这类问题**不能靠"我本地渲染看着没问题"结案**，必须按根因改掉。
+  - `RowLayout(int defaultGap)`：单行、**所有**子组件对齐容器中线；`RowLayout.spring()`（零宽弹簧）吃掉伸缩把右侧组推到右边；组件间距用 `RowLayout.gapBefore(c, px)`。
+  - 首个组件的左侧间距要**显式用 `gapBefore` 给**（`leadingGap` 默认为 0，为的是保留旧 `FlowLayout` 的 hgap；不补就会让整条左移一个 gap）。容器右侧 border 里的 `right` 也要补成原 FlowLayout 的 2×hgap，否则最右元素贴边。
+  - 改任一侧按钮的尺寸/字号后，用 `.workbuddy/tools/HeaderProbe.java` 复算各控件中线（应当全部一致，残差只来自奇偶取整）；横向坐标应与改动前**逐像素一致**（用 InkProfile 对预览图核，见下）。
 - 伪装残余（改动时留意，别把它们再暴露到界面上）：插件 id 仍是 `com.thief.idea`、vendor 仍指向原仓库、持久化文件名仍是 `thief-book.xml`、`static/*.png` 里的截图仍是旧界面。
 
 ## 界面预览（不启动 IDE 直接渲染截图）
 伪装界面可以离线渲染成 PNG 校对排版，工具在 `.workbuddy/tools/`：
 1. 平台目录在 gradle 缓存里：`~/.gradle/caches/modules-2/files-2.1/com.jetbrains.intellij.idea/ideaIC/2023.3/<hash>/ideaIC-2023.3`（`<hash>` 是随机的，用通配或手动找；本机当前为 `6105b81c6142f62379ad6c5afb542c77350a71eb`）。
 2. 先构建出 class 文件（`jar` 任务即可），再运行：
-   `"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 --add-exports=java.desktop/sun.font=ALL-UNNAMED --add-opens=java.desktop/sun.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.event=ALL-UNNAMED -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/UiPreview.java 输出.png 560 900`
+   `"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 --add-exports=java.desktop/sun.font=ALL-UNNAMED --add-opens=java.desktop/sun.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.event=ALL-UNNAMED -cp "<平台目录>/lib/*;build/classes/java/main;build/resources/main" .workbuddy/tools/UiPreview.java 输出.png 560 900`
+   - **资源目录必须在 classpath 上**（`build/resources/main`，手写 javac 时用 `src/main/resources` 也行）：图标现在是从 `icons/lucide/*.svg` 加载的，少了它 `IconLoader.getIcon` 直接抛异常，整个面板渲染不出来。
    - 一次输出 8 张图：`输出.png`（侧栏展开）/ `输出-collapsed.png`（收起）/ `输出-long.png`（长页，核对卡片与 shell 块的分布，画布自动加高）/ `输出-java.png` 与 `输出-vue.png`（另两套素材的角标与代码风格）/ `输出-model.png`（故意用 38 字符的自定义模型名，核对输入框右下角不会被撑变形）/ `输出-noshell.png`（关掉 shell 开关，画布与 `-long` 一致，方便两张对照）/ `输出-narrow.png`（固定 400px + 侧栏展开，正文区只剩约 174px，专门核对卡片头部的三级降级不失效）。
    - 分布统计会同时打印 `card #n` 与 `shell #n` 的 y/百分比——单行 shell 块有没有插进去、插在哪，看这个比肉眼看缩略图靠谱。
    - `--add-exports=java.desktop/sun.font` 不能省，否则 `UIUtil.getFontWithFallback` 抛 `IllegalAccessError`。
@@ -121,6 +147,28 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - 只把工具栏三个图标（复制/下载/刷新）画到一张放大 PNG，几秒出图。**UiPreview 近期在本机多次挂起时用它替代**；改 `AssistantIcons` 后先跑它看形状，再酌情跑完整 UiPreview + PngDiff。
 12. 分页边界核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/PagerEdgeCheck.java`。
    - 补 `PagerCheck` 没覆盖的三种边界：首页继续"上一页"（页码不能变负）、**越界回退之后 `jumpTo` 的定位是否仍准确**（这条专门盯指针缓存被写坏）、CRLF 换行与 `jumpTo` 越界。与上面两条约定（`turnBack` 下限、缓存只在 `currentPage > 0` 时写）成对存在。
+13. 图标总览与清晰度核对：
+   - 全量总览：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 --add-exports=java.desktop/sun.font=ALL-UNNAMED -cp "<平台目录>/lib/*;build/classes/java/main;build/resources/main" .workbuddy/tools/IconGallery.java 输出.png 2 <DPI>`（第 2 个参数是画布放大倍数，第 3 个才是 DPI 因子 1/2——**漏掉第 3 个会静默按 1 跑**）。把每个图标按"名称 + 次要色/强调色/正文色 × 20px/34px"画成一张表（`IconPreview` 只看工具栏那三个图标）。
+   - **量化清晰度（首选，别再靠肉眼）**：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -Djava.awt.headless=true -cp "<平台目录>/lib/*;build/classes/java/main;build/resources/main" .workbuddy/tools/IconHiDpiCheck.java <sysScale> [图标名] [逻辑尺寸]`，如 `... IconHiDpiCheck.java 2 copy 16`。
+     - 原理：把图标画到画布上，与"同一渲染器按目标像素尺寸渲染的参考图"**逐像素比对**；差异 ≈0 才算清晰。分别测 `plain`（Graphics 未缩放）与 `scaled`（Graphics 已按设备倍数缩放）两种模式——**两种都该是 0 差异**，只对一个说明实现依赖了具体的 HiDPI 模式。同时打印墨水包围盒，尺寸算错时一眼能看出来。
+     - 图标名清单：`copy / download / refresh-cw / check / play / arrow-up / chevron-down / chevron-left / chevron-right / volume-2 / volume-1 / image / panel-left-close / panel-left`。
+     - 想测量"改之前糊成什么样"，最省事的做法是**从旧安装包里取类文件**：解出 `build/distributions/<旧包>.zip` 内层 jar 的 `com/thief/idea/**/*.class` 到临时目录，再用它当 `-cp` 跑同一个工具（比 `git show` 更可靠：HEAD 未必是那个中间版本）。
+   - 判断时**必须用 `PngCrop` 裁图放大看**——缩略图上"糊"和"清晰"几乎没差别（曾经只看缩略图就交付，被用户直接指出"图标太糊"）。`IconGallery` 在无 Application 的离线环境里 `IconLoader` 解析不出图标（`getIconWidth()` 为 0），所以它对"旧实现"的尺寸表现**不具参考性**，清晰度以 `IconHiDpiCheck` 与 `UiPreview` 的裁剪图为准。
+14. **离线编排脚本 `.workbuddy/tools/lab.py`（这台机器上做上面这些事的入口）**：
+   - 原因：本机 Git Bash 缺 coreutils（`rm` / `ls` / `cat` / `tail` / `dirname` 全是 127），凡是要"删目录 / 串命令 / 拼 classpath"的活儿都改用 Python 驱动。用 `C:/Users/16658/.workbuddy/binaries/python/versions/3.13.12/python.exe .workbuddy/tools/lab.py <子命令>`。
+   - `compile`：用平台 jar + gradle 缓存里的 epublib/jsoup/slf4j 编译 `src/main/java` 到 `build/classes/java/main`（先清空该目录）。**改了源码想跑任何离线工具都先跑它**。
+   - `preview <out.png> [w] [h]`：跑 `UiPreview` 出 8 张图。
+   - `ink <png> [阈值] [列间隙] [前缀] [y0] [y1] [light|dark]` / `band <png> <y0> <y1> [前缀] [阈值] [light|dark]`：跑 `InkProfile` 量测墨迹。
+   - classpath 里**必须包含 `src/main/resources`**（或 `build/resources/main`），否则 `icons/lucide/*.svg` 加载不到，预览图图标整片空白——量测时表现为"这一列根本没墨迹"，很容易误判成"图标没画出来"。
+15. **横栏对齐探针 `.workbuddy/tools/HeaderProbe.java`（查"两行图标是否垂直对齐"的专用工具）**：
+   `".../java.exe" -Dfile.encoding=UTF-8 --add-exports=java.desktop/sun.font=ALL-UNNAMED --add-opens=java.desktop/sun.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.event=ALL-UNNAMED -Dprobe.fontScale=<字体倍率> -cp "<classpath>" .workbuddy/tools/HeaderProbe.java <scale> [宽度逻辑px=302] [输出.png]`
+   - 用**真实组件**复刻 `MainUi.initHeaderBar()` 与 `ChatInputBar` 的工具栏行，打印每个控件的 bounds 与垂直中心线（设备像素）、每个图标"墨迹中心 vs 图标框中心"的偏移，并画一张 PNG。
+   - **`JBUIScale` 的坑**：只调 `setSystemScaleFactor(SCALE)` 是**没用的**（`scale()` 用的还是预计算值），必须再调 `setUserScaleFactorForTest(SCALE)`，否则打印出来的尺寸永远是 1x（表现为"302 → 302"）。
+   - `probe.fontScale` 用来模拟真实 IDE 的字体放大（离线复刻时 `JBUI.Fonts` 不会自动跟随）；但字体一放大就可能触发 `sun.font.FontUtilities` 的 `IllegalAccessError`，所以要带上 `--add-exports=java.desktop/sun.font` 那组参数。
+   - 判据：**同一条栏里所有控件的中线应当一致**，残差只应来自奇偶取整（≤0.5px）。
+16. **墨迹带量测 `.workbuddy/tools/InkProfile.java` 的两个关键参数**（配合上面 lab.py 的 `band`/`ink` 用）：
+   - `y0 y1`：把量测限制在一条横向带里（如 `0 66` = 顶栏带）。**整张预览图不分带直接量是没意义的**——列聚类会把顶栏和正文混成同一列，中心线全错。
+   - 末尾 `light|dark`：默认 `dark`（墨迹比背景亮），**离线预览渲染的是亮色主题，必须传 `light`**（墨迹取暗像素），且亮色下阈值要抬到 ~200，否则浅灰的次要色图标（MUTED）会被整片漏掉，量出来只剩三两个元素。
 
 ## GUI Designer（不要手改生成代码）
 - `src/main/java/com/thief/idea/ui/SettingUi.java` 中的 `$$$setupUI$$$()` 方法和实例初始化块 `{}` 由 **IntelliJ GUI Designer** 依据同目录 `SettingUi.form` 生成，文件内明确标注 `DO NOT EDIT`。改 UI 必须用 IDEA 的 GUI Designer 编辑 `.form`，不要直接改生成代码。

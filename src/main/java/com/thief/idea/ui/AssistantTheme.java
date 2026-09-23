@@ -269,6 +269,191 @@ public final class AssistantTheme {
     }
 
     /**
+     * 单行横向布局：子控件按顺序从左排到右，**全部对齐到容器的垂直中心线**；
+     * 首选宽度为 0 的子控件当作弹簧，吃掉多余宽度（见 {@link #spring()}）。
+     * <p>
+     * <b>为什么不用 FlowLayout</b>：FlowLayout 先把"行带"高度取成行内最高子控件的高度，再把子控件
+     * <b>在行带内</b>居中，而行带默认贴着容器顶部放。于是"左边一组 / 右边一组"各自成一行时，
+     * 只要两组行带高度不同（字号、DPI 比例、图标尺寸差一点就会不同），两组的中心线就会错开
+     * 好几像素——顶栏"左边那组图标比右边低一截"、底栏"@ # 图片比发送按钮高"都是这么来的。
+     * 这里统一按容器中心线对齐，一组/两组都必然共线，且与字体度量、DPI 无关。
+     * <p>
+     * 宽度不够时（弹簧被压成 0 还不够）退化成原来的 WEST/EAST 行为：弹簧前的一组从左边排、
+     * 后面的贴右边排，中间允许重叠，不会把内容挤出可视区。
+     **/
+    public static class RowLayout implements LayoutManager {
+
+        /**
+         * 单个子控件前面的间距（像素）；不设就用构造参数给的默认值。
+         * 用来在一行里混用"组内小间距 / 组间大间距"。
+         **/
+        public static final String GAP_BEFORE = "thief.rowGapBefore";
+
+        private final int defaultGap;
+
+        public RowLayout(int defaultGap) {
+            this.defaultGap = defaultGap;
+        }
+
+        /**
+         * 弹簧：首选宽度为 0，吃掉多余宽度，把后面的子控件顶到右边
+         **/
+        public static Component spring() {
+            return new Spring();
+        }
+
+        public static void gapBefore(JComponent component, int gap) {
+            component.putClientProperty(GAP_BEFORE, gap);
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            Insets insets = parent.getInsets();
+            int width = 0;
+            int height = 0;
+            int index = 0;
+            for (Component child : parent.getComponents()) {
+                if (!child.isVisible()) {
+                    continue;
+                }
+                width += index == 0 ? leadingGap(child) : gapBefore(child);
+                index++;
+                Dimension size = child.getPreferredSize();
+                width += size.width;
+                height = Math.max(height, size.height);
+            }
+            return new Dimension(width + insets.left + insets.right,
+                    height + insets.top + insets.bottom);
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            return preferredLayoutSize(parent);
+        }
+
+        @Override
+        public void layoutContainer(Container parent) {
+            Insets insets = parent.getInsets();
+            int left = insets.left;
+            int right = parent.getWidth() - insets.right;
+            int centerY = insets.top + (parent.getHeight() - insets.top - insets.bottom) / 2;
+
+            java.util.List<Component> visible = new java.util.ArrayList<>();
+            for (Component child : parent.getComponents()) {
+                if (child.isVisible()) {
+                    visible.add(child);
+                }
+            }
+            if (visible.isEmpty()) {
+                return;
+            }
+
+            int fixed = 0;
+            int springs = 0;
+            for (int i = 0; i < visible.size(); i++) {
+                fixed += i == 0 ? leadingGap(visible.get(i)) : gapBefore(visible.get(i));
+                int width = visible.get(i).getPreferredSize().width;
+                if (width <= 0) {
+                    springs++;
+                } else {
+                    fixed += width;
+                }
+            }
+            int slack = right - left - fixed;
+            int springWidth = springs == 0 ? 0 : Math.max(0, slack / springs);
+
+            if (springs == 0 || slack >= 0) {
+                // 够宽：从左依次排，弹簧吃掉多余宽度
+                int x = left;
+                for (int i = 0; i < visible.size(); i++) {
+                    Component child = visible.get(i);
+                    x += i == 0 ? leadingGap(child) : gapBefore(child);
+                    Dimension size = child.getPreferredSize();
+                    int width = size.width <= 0 ? springWidth : size.width;
+                    child.setBounds(x, centerY - size.height / 2, width, size.height);
+                    x += width;
+                }
+                return;
+            }
+
+            // 太窄：弹簧归零，弹簧前的一组贴左、后面的贴右，中间允许重叠
+            int springAt = 0;
+            while (springAt < visible.size() && visible.get(springAt).getPreferredSize().width > 0) {
+                springAt++;
+            }
+            int x = left;
+            for (int i = 0; i < springAt; i++) {
+                Component child = visible.get(i);
+                x += i == 0 ? leadingGap(child) : gapBefore(child);
+                Dimension size = child.getPreferredSize();
+                child.setBounds(x, centerY - size.height / 2, size.width, size.height);
+                x += size.width;
+            }
+            int end = right;
+            for (int i = visible.size() - 1; i > springAt; i--) {
+                Component child = visible.get(i);
+                Dimension size = child.getPreferredSize();
+                end -= size.width;
+                child.setBounds(end, centerY - size.height / 2, size.width, size.height);
+                end -= gapBefore(child);
+            }
+        }
+
+        private int gapBefore(Component child) {
+            Integer gap = explicitGap(child);
+            return gap != null ? gap : defaultGap;
+        }
+
+        /**
+         * 行首的间距：默认 0，只有显式设了 {@link #GAP_BEFORE} 才生效。
+         * 用来表达"整行左边距"——原来的 FlowLayout 会在第一个子控件前也留一个 hgap，
+         * 换成本布局后需要显式补上才能保持观感不变。
+         **/
+        private int leadingGap(Component child) {
+            Integer gap = explicitGap(child);
+            return gap != null ? gap : 0;
+        }
+
+        private Integer explicitGap(Component child) {
+            if (child instanceof JComponent) {
+                Object value = ((JComponent) child).getClientProperty(GAP_BEFORE);
+                if (value instanceof Integer) {
+                    return (Integer) value;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * 什么都不画、首选尺寸为 0 的弹簧
+         **/
+        private static final class Spring extends JComponent {
+            @Override
+            public Dimension getPreferredSize() {
+                return new Dimension(0, 0);
+            }
+
+            @Override
+            public Dimension getMinimumSize() {
+                return new Dimension(0, 0);
+            }
+
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, 0);
+            }
+        }
+    }
+
+    /**
      * 无边框的图标/字形按钮：悬停时出现淡色圆角底，模拟 IDE 里的工具栏图标按钮。
      * 也可以给定常驻底色（例如 diff 卡片上的 Apply）
      **/

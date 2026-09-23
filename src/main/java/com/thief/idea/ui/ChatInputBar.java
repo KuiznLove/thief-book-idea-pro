@@ -101,15 +101,18 @@ public final class ChatInputBar extends JPanel {
     }
 
     /**
-     * 输入区下方的一行：左侧伪装按钮，右侧模型选择与发送
+     * 输入区下方的一行：左侧伪装按钮，右侧模型选择与发送。
+     * <p>
+     * 用 {@link AssistantTheme.RowLayout} 排成一行（所有子控件共用容器中心线），
+     * 而不是 LEFT/RIGHT 两个 FlowLayout 面板——后者两组行带高度不同时中心线会错开
+     * （@ # 图片那组比发送按钮高/低几像素）。
      **/
     private JComponent createToolbar() {
-        JPanel row = new JPanel(new BorderLayout());
+        JPanel row = new JPanel(new AssistantTheme.RowLayout(JBUI.scale(2)));
         row.setOpaque(false);
-        row.setBorder(JBUI.Borders.empty(0, JBUI.scale(6), JBUI.scale(5), JBUI.scale(6)));
+        // 右边 12 = 原 FlowLayout 的 hgap 也加在行尾（6 + 6），保持观感不变
+        row.setBorder(JBUI.Borders.empty(0, JBUI.scale(6), JBUI.scale(5), JBUI.scale(12)));
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0));
-        left.setOpaque(false);
         AssistantTheme.GlyphButton at = glyphButton("@", "添加代码上下文");
         at.addActionListener(e -> showMenu(at,
                 itemMenu("Files & Folders", "Git Diff", "Terminal Output", "Codebase Index")));
@@ -120,17 +123,17 @@ public final class ChatInputBar extends JPanel {
                 "插入图片");
         picture.addActionListener(e -> showMenu(picture,
                 itemMenu("Screenshot", "Clipboard Image", "From File...")));
-        left.add(at);
-        left.add(hash);
-        left.add(picture);
-
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(6), 0));
-        right.setOpaque(false);
-        right.add(modelButton);
-        right.add(new SendButton());
-
-        row.add(left, BorderLayout.WEST);
-        row.add(right, BorderLayout.EAST);
+        // 行首那 2px 是显式补出来的（原来的 FlowLayout 会在第一个子控件前也留 hgap）
+        AssistantTheme.RowLayout.gapBefore(at, JBUI.scale(2));
+        row.add(at);
+        row.add(hash);
+        row.add(picture);
+        row.add(AssistantTheme.RowLayout.spring());
+        AssistantTheme.RowLayout.gapBefore(modelButton, JBUI.scale(6));
+        row.add(modelButton);
+        JButton send = new SendButton();
+        AssistantTheme.RowLayout.gapBefore(send, JBUI.scale(6));
+        row.add(send);
         return row;
     }
 
