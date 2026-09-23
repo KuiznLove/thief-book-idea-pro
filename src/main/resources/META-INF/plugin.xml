@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>com.thief.idea</id>
   <name>CodePilot</name>
-  <version>0.3.5</version>
+  <version>0.3.6</version>
   <vendor email="1340976576@qq.com" url="https://github.com/yisier/thief-book-idea">毅斯</vendor>
 
   <description>
@@ -46,6 +46,12 @@
 
   <change-notes>
     <![CDATA[
+      <h3>0.3.6</h3>
+      <ul>
+        <li>优化代码卡片插入算法，修复"整屏都是正文、看不到任何代码块"的情况：卡片此前只落在段落之间，跨越字数阈值的长段落会把卡片间隔撑大到整段长度；现在长段落会从句子边界（句号/问号等句末标点）切开、把卡片插进段落内部，一段可连续插多张，间隔不再被整段长度撑大</li>
+        <li>单行 shell 命令与卡片在同一段落冲突时卡片优先，避免长段落被一条命令独占</li>
+        <li>普通页面（短段落）的分布与之前完全一致；同一页刷新/老板键恢复的渲染结果仍然保持一致</li>
+      </ul>
       <h3>0.3.5</h3>
       <ul>
         <li>界面图标不再模糊：全部改用开源图标集 Lucide（ISC 许可证），并按屏幕像素密度实时渲染，高 DPI 屏幕（2x / 系统缩放 125%~200%）下线条锐利</li>
