@@ -105,6 +105,8 @@ IntelliJ IDEA 插件项目（thief-book-idea，IDE 内"摸鱼"小说阅读器）
    - 对 `BookPager` 跑翻页/跳页/末页/行距/跨块中文行/GB18030/BOM 一组断言，**改 `book/` 包里的任何读取逻辑后必须跑**；失败会同时暴露"引擎行为变了"和"你把断言语义记错了"两种情况，先想清楚再改。
 10. 配置格式自测：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/StateCheck.java`；平台序列化行为探针：同 classpath 跑 `XmlProbe.java` / `XmlProbe2.java`。
    - StateCheck 验证 thief-book.xml 新旧格式双向兼容（旧格式读入 → 各 getter 取值 → 回写属性/`<book>` 子元素一致、老配置只有 bookPath 时导入第一本书、全新状态走 getter 默认值）。**改 `PersistentState` 的注解或字段名前必须跑**。
+11. 图标快速核对：`"/d/Program Files/java/jdk-17.0.7/bin/java.exe" -Dfile.encoding=UTF-8 -cp "<平台目录>/lib/*;build/classes/java/main" .workbuddy/tools/IconPreview.java 输出.png 8`。
+   - 只把工具栏三个图标（复制/下载/刷新）画到一张放大 PNG，几秒出图。**UiPreview 近期在本机多次挂起时用它替代**；改 `AssistantIcons` 后先跑它看形状，再酌情跑完整 UiPreview + PngDiff。
 
 ## GUI Designer（不要手改生成代码）
 - `src/main/java/com/thief/idea/ui/SettingUi.java` 中的 `$$$setupUI$$$()` 方法和实例初始化块 `{}` 由 **IntelliJ GUI Designer** 依据同目录 `SettingUi.form` 生成，文件内明确标注 `DO NOT EDIT`。改 UI 必须用 IDEA 的 GUI Designer 编辑 `.form`，不要直接改生成代码。

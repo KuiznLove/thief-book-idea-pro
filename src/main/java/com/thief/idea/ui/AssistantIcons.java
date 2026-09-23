@@ -111,11 +111,15 @@ public final class AssistantIcons {
         return icon(size, color, (g, s, c) -> {
             float u = s / 16f;
             g.setColor(c);
+            // 背面纸张只露出不被前页遮住的部分：左边线从前页顶边（y=5.5）起笔，
+            // 底边画到前页右边线（x=10.5）为止——都不伸进前页轮廓，
+            // 否则会穿过前页边线，看起来像两个完整的方框叠在一起
             Path2D back = new Path2D.Float();
-            back.moveTo(5.5f * u, 10.5f * u);
+            back.moveTo(5.5f * u, 5.5f * u);
             back.lineTo(5.5f * u, 2.5f * u);
             back.lineTo(13.5f * u, 2.5f * u);
             back.lineTo(13.5f * u, 10.5f * u);
+            back.lineTo(10.5f * u, 10.5f * u);
             g.draw(back);
             g.draw(new RoundRectangle2D.Float(2.5f * u, 5.5f * u, 8 * u, 8 * u, 1.6f * u, 1.6f * u));
         });
