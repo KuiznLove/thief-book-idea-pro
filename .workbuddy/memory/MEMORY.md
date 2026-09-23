@@ -9,6 +9,8 @@ IntelliJ IDEA 插件的"摸鱼阅读器"，但从 v0.1.7 起**外观伪装成 AI
   `E:/Java/jdk-17/bin/java.exe -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain <task>`。
 - 依赖下载走 Clash 代理 `127.0.0.1:7890`，需加 `-Dhttps.proxyHost/-Dhttps.proxyPort`（客户端与 `org.gradle.jvmargs` 都加）。
 - Gradle Wrapper 8.4；构建用 IntelliJ Platform 2023.3（community），最低兼容 build 233。
+- ⚠️ **2026-09-20 实测**：上述 JDK/代理路径在当前会话里都不通——`E:/Java/jdk-17` 与 `~/.gradle`（wrapper dists / caches）都不存在，PATH 里的 JDK 17 实际在 `D:/Program Files/java/jdk-17.0.7`。**代理恢复后构建是通过的**：用命令行 `-Dorg.gradle.java.home="D:/Program Files/java/jdk-17.0.7"` 覆盖 `gradle.properties` 里那条不存在的路径（不必改仓库文件），再补 `-Dhttps.proxyHost/-Dhttps.proxyPort`（客户端与 `org.gradle.jvmargs` 都要）；首次 buildPlugin 约 26 分钟（下 Gradle 8.4 + 平台 2023.3，之后缓存在 `~/.gradle`）。**代理没开时不必卡住**：用 IDEA 自带运行时做编译校验即可——
+  `E:/JetBrains/Toolbox/IntelliJ IDEA Ultimate/jbr/bin/javac.exe`（javac 25，平台 class 是字节码 69，JDK 17/21 读不了）+ `-cp "E:/JetBrains/Toolbox/IntelliJ IDEA Ultimate/lib/*"`；跑离线工具用 `jbr/bin/java.exe` + 平台目录的 `lib/*`。做法与排除清单见仓库 `AGENTS.md` 的"没有 Gradle 缓存 / 代理不可用时的替代校验"。
 
 ## 仓库约定
 - 源码文件统一 **CRLF**；新增文件请保持 CRLF。
@@ -28,3 +30,5 @@ IntelliJ IDEA 插件的"摸鱼阅读器"，但从 v0.1.7 起**外观伪装成 AI
   - ⚠️ class 常量池里是 **modified UTF-8**：中文 needle 必须先 `Buffer.from(n,'utf8').toString('latin1')` 再比对，直接 `includes(中文)` 永远匹配不上（脚本里已有 `inClass()` 封装）。
 - `IconGen.java`：生成工具窗口图标 `icons/assistant.png` / `assistant@2x.png`。
 - `SettingPreview.java`：打印 `SettingUi` 各控件占用的 FormLayout 单元格，验证运行时追加的控件没抢格。
+- `SelectCheck.java`（2026-09-20 新增）：离线渲染一页后遍历所有文本组件，逐个建选区读回选中文字，打印"可选中 N / 不可选中 M"。**"正文选不中"在截图里完全看不出来**，改阅读区文本组件后跑一次。
+- `PngDiff.java`（2026-09-20 新增）：两张预览 PNG 的像素级差异报告（差异像素数 / 包围盒 / 按 y 聚类的"差异带"）。做法：`git show HEAD:<路径> > 临时目录/x.java` 取旧版源码，与当前其它源文件一起编译到另一个输出目录，各跑一遍 `UiPreview` 再 PngDiff 对比，用来证明"排版零变化"。实测它能指出"换成 JTextField 后某行整体位移 2px"这种肉眼看不出的问题。

@@ -102,3 +102,28 @@ for (const [clsName, needle] of gone) {
   console.log((inClass(t, needle) ? ' STALE' : '  ok  ') + clsName + ' 不含 "' + needle + '"');
 }
 
+// v0.3.2：只读文本可选中可复制（makeSelectable 统一配置 + 单行 SelectableText + 复制/全选右键菜单
+// + 初始焦点交回输入框）。旧实现里正文设了 setFocusable(false)，所以选不中——那行代码不在了，
+// 但"不在了"没法用字符串稳定判定，这里只正向确认新实现存在
+console.log('\n--- v0.3.2 可选中可复制 / 初始焦点 ---');
+const selectableCls = innerJar.entries.find(e => e.name === 'com/thief/idea/ui/AssistantTheme$SelectableText.class');
+console.log((selectableCls ? '  OK  ' : ' MISS ') + 'ui/AssistantTheme$SelectableText.class');
+const v032 = [
+  ['ui/AssistantTheme', 'makeSelectable'],
+  ['ui/AssistantTheme', 'SelectableText'],
+  ['ui/AssistantTheme', '复制'],          // 右键菜单文案
+  ['ui/AssistantTheme', '全选'],
+  // 注意 makeSelectable 的调用点在内部类里（段落面板 AssistantPageView$ParagraphPane），
+  // AssistantPageView.class 里只有对 SelectableText 的类引用；endsWith 比对内部类的 $ 名字也成立
+  ['ui/AssistantPageView$ParagraphPane', 'makeSelectable'],
+  ['ui/AssistantPageView', 'SelectableText'],
+  ['ui/ChatInputBar', 'inputComponent'],
+  ['MainUi', 'setPreferredFocusableComponent'],
+];
+for (const [clsName, needle] of v032) {
+  const entry = innerJar.entries.find(e => e.name.endsWith(clsName + '.class'));
+  if (!entry) { console.log(' MISS ' + clsName + '.class'); continue; }
+  const t = innerJar.data(entry.lho).toString('latin1');
+  console.log((inClass(t, needle) ? '  OK  ' : ' MISS ') + clsName + ' 含 "' + needle + '"');
+}
+

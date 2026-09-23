@@ -5,6 +5,10 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 
 import javax.swing.*;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
+import javax.swing.text.DefaultCaret;
+import javax.swing.text.JTextComponent;
 import java.awt.*;
 import java.awt.geom.RoundRectangle2D;
 
@@ -123,16 +127,101 @@ public final class AssistantTheme {
     }
 
     /**
-     * 透明、不可编辑、自动换行的文本面板（用于渲染一段助手回复）
+     * 透明、不可编辑、自动换行的文本面板（用于渲染一段助手回复）。
+     * 只读不等于不可选：文本可以选中复制，配置见 {@link #makeSelectable}
      **/
     public static JTextPane textPane() {
         JTextPane pane = new JTextPane();
         pane.setOpaque(false);
         pane.setEditable(false);
-        pane.setFocusable(false);
         pane.setBorder(JBUI.Borders.empty());
-        pane.setCursor(Cursor.getDefaultCursor());
+        makeSelectable(pane);
         return pane;
+    }
+
+    /**
+     * 把只读文本组件配置成"可选中、可复制"：
+     * <ul>
+     *   <li><b>必须可获取焦点</b>——不可聚焦的文本组件无法建立选区，这就是"正文选不中"的根因，
+     *   不能为了"点上去没反应"而设 {@code setFocusable(false)}；</li>
+     *   <li>不画插入符：只读回复不该出现闪烁光标（否则看着像可编辑的输入框），
+     *   覆盖的是只画插入符的 {@code paint(Graphics)}；选区高亮走
+     *   {@code Highlighter.HighlightPainter#paint} 那个重载，不受影响；</li>
+     *   <li>补一个"复制 / 全选"右键菜单（{@link JTextPane} 默认没有右键菜单）。</li>
+     * </ul>
+     **/
+    public static void makeSelectable(JTextComponent component) {
+        component.setFocusable(true);
+        component.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+        component.setCaret(new DefaultCaret() {
+            @Override
+            public void paint(Graphics g) {
+                // 只读文本不画插入符
+            }
+        });
+        component.setComponentPopupMenu(textMenu(component));
+    }
+
+    /**
+     * 只读文本的右键菜单：复制 / 全选
+     **/
+    private static JPopupMenu textMenu(JTextComponent component) {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem copy = new JMenuItem("复制");
+        copy.addActionListener(e -> component.copy());
+        JMenuItem selectAll = new JMenuItem("全选");
+        selectAll.addActionListener(e -> component.selectAll());
+        menu.add(copy);
+        menu.add(selectAll);
+        menu.addPopupMenuListener(new PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                copy.setEnabled(component.getSelectionStart() != component.getSelectionEnd());
+            }
+
+            @Override
+            public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+            }
+
+            @Override
+            public void popupMenuCanceled(PopupMenuEvent e) {
+            }
+        });
+        return menu;
+    }
+
+    /**
+     * 单行只读文本（代码行、命令行、小标题）：透明无边框、可选中复制。
+     * <p>
+     * 与 {@link JTextPane} 的区别是<b>不按可用宽度折行</b>——首选宽度只由文本自身决定，
+     * 所以能直接替换原来的 {@link JLabel} 而不改变卡片的行高；宽度不够时和 JLabel 一样裁剪
+     **/
+    public static class SelectableText extends JTextField {
+        public SelectableText(String text, Font font, Color color) {
+            super(text);
+            setEditable(false);
+            setOpaque(false);
+            setBorder(JBUI.Borders.empty());
+            setMargin(new Insets(0, 0, 0, 0));
+            setFont(font);
+            setForeground(color);
+            setAlignmentX(Component.LEFT_ALIGNMENT);
+            makeSelectable(this);
+        }
+
+        /**
+         * 首选尺寸按字体度量算，与原来的 {@link JLabel} 完全一致——{@code JTextField} 默认会在
+         * 文本宽度上加几个像素（给插入符留位），换组件后那一行文字会整体位移 1~2px，
+         * 卡片头部和 shell 块的对齐就跟着变
+         **/
+        @Override
+        public Dimension getPreferredSize() {
+            FontMetrics metrics = getFontMetrics(getFont());
+            if (metrics == null) {
+                return super.getPreferredSize();
+            }
+            return new Dimension(metrics.stringWidth(getText()), metrics.getHeight());
+        }
     }
 
     /**

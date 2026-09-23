@@ -9,3 +9,6 @@ build/
 .idea/workspace.xml
 .idea/runConfigurations/
 *.iml
+
+# 离线预览产物（UiPreview 生成的 PNG，11MB，不入库）
+.workbuddy/preview/

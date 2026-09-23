@@ -318,9 +318,9 @@ public final class AssistantPageView extends JPanel implements Scrollable {
      * 小标题（模拟 Markdown 二级标题）
      **/
     private JComponent heading(String text) {
-        JLabel label = new JLabel(text);
-        label.setFont(AssistantTheme.bold(bodyFont.deriveFont((float) bodyFont.getSize() + 2)));
-        label.setForeground(AssistantTheme.TEXT);
+        AssistantTheme.SelectableText label = new AssistantTheme.SelectableText(text,
+                AssistantTheme.bold(bodyFont.deriveFont((float) bodyFont.getSize() + 2)),
+                AssistantTheme.TEXT);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         return label;
     }
@@ -380,13 +380,11 @@ public final class AssistantPageView extends JPanel implements Scrollable {
     private JComponent shellBody(DisguiseContent.ShellScript script) {
         Font commandFont = AssistantTheme.monoSmall(bodyFont.getSize());
 
-        JLabel prompt = new JLabel("$");
-        prompt.setFont(commandFont);
-        prompt.setForeground(AssistantTheme.SHELL_PROMPT);
+        AssistantTheme.SelectableText prompt = new AssistantTheme.SelectableText("$",
+                commandFont, AssistantTheme.SHELL_PROMPT);
 
-        JLabel command = new JLabel(script.command);
-        command.setFont(commandFont);
-        command.setForeground(AssistantTheme.CODE_TEXT);
+        AssistantTheme.SelectableText command = new AssistantTheme.SelectableText(script.command,
+                commandFont, AssistantTheme.CODE_TEXT);
 
         JPanel row = new JPanel(new BorderLayout(JBUI.scale(7), 0));
         row.setOpaque(false);
@@ -592,9 +590,8 @@ public final class AssistantPageView extends JPanel implements Scrollable {
             background = AssistantTheme.DEL_BG;
         }
 
-        JLabel label = new JLabel(line.text.isEmpty() ? " " : line.text);
-        label.setFont(codeFont);
-        label.setForeground(AssistantTheme.CODE_TEXT);
+        AssistantTheme.SelectableText label = new AssistantTheme.SelectableText(
+                line.text.isEmpty() ? " " : line.text, codeFont, AssistantTheme.CODE_TEXT);
 
         JPanel row = new JPanel(new BorderLayout());
         row.setOpaque(background != null);
@@ -800,7 +797,10 @@ public final class AssistantPageView extends JPanel implements Scrollable {
     }
 
     /**
-     * 段落文本面板：在 BoxLayout 中需要自己按已知宽度算换行高度
+     * 段落文本面板：在 BoxLayout 中需要自己按已知宽度算换行高度。
+     * <p>
+     * 正文是只读的，但要能选中复制（见 {@link AssistantTheme#makeSelectable}）——"不可编辑"
+     * 和"不可选中"是两回事，这里不设 {@code setFocusable(false)}，否则鼠标选不中任何文字
      **/
     private final class ParagraphPane extends JTextPane {
         private int wrapWidth = -1;
@@ -809,10 +809,9 @@ public final class AssistantPageView extends JPanel implements Scrollable {
         ParagraphPane() {
             setOpaque(false);
             setEditable(false);
-            setFocusable(false);
             setBorder(JBUI.Borders.empty());
-            setCursor(Cursor.getDefaultCursor());
             setAlignmentX(Component.LEFT_ALIGNMENT);
+            AssistantTheme.makeSelectable(this);
         }
 
         void setWrapWidth(int width) {

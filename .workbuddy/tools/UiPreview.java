@@ -145,7 +145,7 @@ public class UiPreview {
         // 关掉 "Shell snippet" 开关，画布与 preview-long.png 一致，方便两张对照
         // 看单行 shell 块是不是真的消失了
         render(suffix(out, "-noshell.png"), width, Math.max(height, 2200), true, LONG_SAMPLE,
-                DisguiseContent.PYTHON, DisguiseContent.MODELS[0], false);
+                DisguiseContent.PYTHON, DisguiseContent.MODELS[0], false, true, null);
         // 窄宽度：固定 400px + 侧栏展开，正文区只剩约 174px，专门用来核对卡片头部的
         // 三级降级（收窄文件名 → 收起次要图标 → 收起整条工具栏）有没有失效、会不会叠字。
         // 用固定宽度而不是跟随参数，是为了让它每次预览都被覆盖到，不依赖手输参数
@@ -168,12 +168,13 @@ public class UiPreview {
 
     private static void render(String out, int width, int height, boolean sidebarExpanded,
                                String sample, String language) throws Exception {
-        render(out, width, height, sidebarExpanded, sample, language, DisguiseContent.MODELS[0], true);
+        render(out, width, height, sidebarExpanded, sample, language, DisguiseContent.MODELS[0],
+                true, true, null);
     }
 
     private static void render(String out, int width, int height, boolean sidebarExpanded,
                                String sample, String language, String modelName) throws Exception {
-        render(out, width, height, sidebarExpanded, sample, language, modelName, true);
+        render(out, width, height, sidebarExpanded, sample, language, modelName, true, true, null);
     }
 
     /**

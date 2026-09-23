@@ -1,5 +1,6 @@
 package com.thief.idea.tts;
 
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -12,6 +13,8 @@ import java.nio.charset.StandardCharsets;
  * pause/resume 不支持（no-op），stop 通过销毁进程实现。
  **/
 public abstract class CommandTtsEngine implements TtsEngine {
+
+    private static final Logger LOG = Logger.getInstance(CommandTtsEngine.class);
 
     protected volatile String voice = "";
     protected volatile double rate = 1.0;
@@ -47,7 +50,12 @@ public abstract class CommandTtsEngine implements TtsEngine {
         stopRequested = false;
         Process running = null;
         try {
-            running = new ProcessBuilder(buildCommand()).redirectErrorStream(true).start();
+            // 子进程输出必须显式丢弃：不排空管道的话，say/espeak-ng 打印较多内容
+            // （警告、进度等）会填满系统管道缓冲区，waitFor 直接死锁
+            running = new ProcessBuilder(buildCommand())
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
             process = running;
             try (OutputStreamWriter writer = new OutputStreamWriter(running.getOutputStream(), StandardCharsets.UTF_8)) {
                 writer.write(text);
@@ -56,7 +64,7 @@ public abstract class CommandTtsEngine implements TtsEngine {
             running.waitFor();
             return !stopRequested;
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.warn("语音命令执行失败", e);
             return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

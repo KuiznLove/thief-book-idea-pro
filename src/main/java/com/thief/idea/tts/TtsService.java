@@ -1,10 +1,14 @@
 package com.thief.idea.tts;
 
+import com.intellij.openapi.diagnostic.Logger;
+
 /**
  * 朗读调度：后台线程逐页取文本交给引擎朗读，读完自动取下一页，直到结尾或被停止。
  * 页文本由调用方（MainUi）通过 PageSource 提供，取下一页时同时负责界面翻页。
  **/
 public class TtsService {
+
+    private static final Logger LOG = Logger.getInstance(TtsService.class);
 
     /**
      * 逐页提供待朗读文本；返回 null 表示已到书末，朗读结束
@@ -78,6 +82,15 @@ public class TtsService {
         return running;
     }
 
+    /**
+     * 是否真的在朗读：仍在运行且未被请求停止。
+     * stop() 是异步的（只置标志，朗读线程随后退出），停止过程中 isRunning 仍为 true，
+     * 调用方（MainUi.startTts）用它判断能否立即替换重启，避免"停止后马上再点没反应"
+     **/
+    public boolean isActive() {
+        return running && !stopRequested;
+    }
+
     public boolean isPaused() {
         return paused;
     }
@@ -119,7 +132,7 @@ public class TtsService {
                 }
             }
         } catch (Throwable t) {
-            t.printStackTrace();
+            LOG.warn("朗读线程异常退出", t);
         } finally {
             TtsEngine current = engine;
             if (current != null) {

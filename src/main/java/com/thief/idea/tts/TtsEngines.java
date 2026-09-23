@@ -1,5 +1,7 @@
 package com.thief.idea.tts;
 
+import com.intellij.openapi.diagnostic.Logger;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +13,8 @@ import java.util.Locale;
  * TTS 引擎工厂与平台探测。
  **/
 public final class TtsEngines {
+
+    private static final Logger LOG = Logger.getInstance(TtsEngines.class);
 
     private TtsEngines() {
     }
@@ -78,7 +82,7 @@ public final class TtsEngines {
                 voice = new SapiVoice();
                 result.addAll(voice.listVoiceDescriptions());
             } catch (Throwable t) {
-                t.printStackTrace();
+                LOG.warn("枚举系统语音失败", t);
             } finally {
                 if (voice != null) {
                     voice.releaseQuietly();
@@ -117,7 +121,7 @@ public final class TtsEngines {
             }
             process.waitFor();
         } catch (Exception e) {
-            e.printStackTrace();
+            LOG.warn("枚举 macOS 语音失败", e);
         }
         return result.toArray(new String[0]);
     }

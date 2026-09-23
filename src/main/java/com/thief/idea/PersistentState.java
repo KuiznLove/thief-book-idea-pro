@@ -4,6 +4,9 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
+import com.intellij.util.xmlb.XmlSerializer;
+import com.intellij.util.xmlb.annotations.Attribute;
+import com.intellij.util.xmlb.annotations.Transient;
 import com.thief.idea.disguise.DisguiseContent;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
@@ -16,6 +19,25 @@ import java.util.Map;
 import java.util.Objects;
 
 
+/**
+ * 持久化配置（thief-book.xml）。
+ * <p>
+ * 标量设置由平台 {@link XmlSerializer} 按 {@link Attribute} 标注的属性名序列化
+ * （与旧版手写 getState/loadState 写出的属性名完全一致，老配置文件可直接读取）；
+ * 书本列表是 Map，平台序列化不好表达，仍手工读写 {@code <book>} 子元素。
+ * <p>
+ * <b>加新设置只需要三处</b>：加一个带 {@code @Attribute("属性名")} 的字段 + getter/setter
+ * （默认值写在 getter 里，字段保持 null 即"未设置"）。不用再改 getState / loadState。
+ * <p>
+ * 两个注意点（离线探针 .workbuddy/tools/XmlProbe.java 验证过，改注解前先跑它）：
+ * <ul>
+ *   <li>存储字段不能与同名 boolean is-getter 共存——序列化会被静默丢弃（反序列化却能读入，
+ *       不对称）。所以 {@link #shellBlockFlag} / {@link #hideImagesFlag} 用了不同的字段名，
+ *       对外的 {@code isShellBlockEnabled()} / {@code isHideImages()} 标了 {@code @Transient}；</li>
+ *   <li>没有 {@code @Attribute} 的字段会被写成 {@code <option>} 子元素，污染格式——
+ *       所有标量字段都必须带注解（{@code bookMap} 用 {@code @Transient} 跳过）。</li>
+ * </ul>
+ **/
 @State(
         name = "PersistentState",
         storages = {@Storage(
@@ -29,87 +51,110 @@ public class PersistentState implements PersistentStateComponent<Element> {
      **/
     public static final String DEFAULT_FONT = "系统默认";
 
+    @Attribute("bookPath")
     private String bookPathText;
 
+    @Attribute("showFlag")
     private String showFlag;
 
+    @Attribute("fontSize")
     private String fontSize;
 
+    @Attribute("fontType")
     private String fontType;
 
+    @Attribute("before")
     private String before;
 
+    @Attribute("next")
     private String next;
 
+    @Attribute("currentLine")
     private String currentLine;
 
+    @Attribute("lineCount")
     private String lineCount;
 
+    @Attribute("lineSpace")
     private String lineSpace;
 
+    @Attribute("bossKey")
     private String bossKey;
 
     /**
      * 朗读播放/停止热键，默认 Ctrl+4
      **/
+    @Attribute("ttsKey")
     private String ttsKey;
 
     /**
      * 朗读语音显示名，空串表示系统默认
      **/
+    @Attribute("ttsVoice")
     private String ttsVoice;
 
     /**
      * 朗读语速倍率（字符串形式，如 "1.0"）
      **/
+    @Attribute("ttsRate")
     private String ttsRate;
-
-    /**
-     * 全部书本：路径 -> 各自阅读进度（行号），顺序即设置页列表顺序。
-     * 支持选择多本书并在阅读界面切换，每本书独立保存进度。
-     **/
-    private LinkedHashMap<String, String> bookMap = new LinkedHashMap<>();
 
     /**
      * 伪装用的"助手名称"（显示在阅读窗口顶部与 Tab 标题，可在窗口内右键修改）
      **/
+    @Attribute("assistantName")
     private String assistantName;
 
     /**
      * 伪装用的"模型名"（显示在输入框右下角）
      **/
+    @Attribute("assistantModel")
     private String assistantModel;
 
     /**
      * 伪装用的"自定义模型名"（设置页 Style 面板可填，纯装饰，不需要 url / api key）：
      * 填了之后会作为一项出现在输入框右下角的模型列表里，见 ChatInputBar#setCustomModel
      **/
+    @Attribute("customModel")
     private String customModel;
 
     /**
      * 左侧"历史记录"（epub 目录）是否被收起："1" 已收起，"0" 展开
      **/
+    @Attribute("tocCollapsed")
     private String tocCollapsed;
 
     /**
      * 伪装代码卡片使用的语言（Python / Java / Vue），取值见 DisguiseContent.LANGUAGES
      **/
+    @Attribute("codeLanguage")
     private String codeLanguage;
 
     /**
      * 是否在自然段中间插入单行 shell 命令："0" 关闭，其它值（含未设置）都视为开启。
-     * 用"非 0 即开"是为了让老配置升级上来时默认就带这个效果
+     * 用"非 0 即开"是为了让老配置升级上来时默认就带这个效果。
+     * 字段名避开属性名 shellBlockEnabled，原因见类注释
      **/
-    private String shellBlockEnabled;
+    @Attribute("shellBlockEnabled")
+    private String shellBlockFlag;
 
     /**
      * 无图模式：是否隐藏电子书正文里的插图（设置页开关）。
      * <p>
-     * 注意与 {@link #shellBlockEnabled} 的"非 0 即开"相反——这里是 **等于 "1" 才隐藏**，
+     * 注意与 {@link #shellBlockFlag} 的"非 0 即开"相反——这里是 **等于 "1" 才隐藏**，
      * 未设置 / 老配置一律视为 false（照常显示插图）。默认"显示"才不会让升级后的用户
-     * 打开书发现插图凭空没了
+     * 打开书发现插图凭空没了。字段名避开属性名 hideImages，原因见类注释
      **/
-    private String hideImages;
+    @Attribute("hideImages")
+    private String hideImagesFlag;
+
+    /**
+     * 全部书本：路径 -> 各自阅读进度（行号），顺序即设置页列表顺序。
+     * 支持选择多本书并在阅读界面切换，每本书独立保存进度。
+     * Map 不走平台序列化，由 getState/loadState 手工读写 <book> 子元素
+     **/
+    @Transient
+    private LinkedHashMap<String, String> bookMap = new LinkedHashMap<>();
 
     public PersistentState() {
     }
@@ -122,27 +167,7 @@ public class PersistentState implements PersistentStateComponent<Element> {
     @Nullable
     @Override
     public Element getState() {
-        Element element = new Element("PersistentState");
-        element.setAttribute("bookPath", this.getBookPathText());
-        element.setAttribute("showFlag", this.getShowFlag());
-        element.setAttribute("fontSize", this.getFontSize());
-        element.setAttribute("before", this.getBefore());
-        element.setAttribute("next", this.getNext());
-        element.setAttribute("currentLine", this.getCurrentLine());
-        element.setAttribute("fontType", this.getFontType());
-        element.setAttribute("lineCount",this.getLineCount());
-        element.setAttribute("lineSpace",this.getLineSpace());
-        element.setAttribute("bossKey",this.getBossKey());
-        element.setAttribute("ttsKey", this.getTtsKey());
-        element.setAttribute("ttsVoice", this.getTtsVoice());
-        element.setAttribute("ttsRate", this.getTtsRate());
-        element.setAttribute("assistantName", this.getAssistantName());
-        element.setAttribute("assistantModel", this.getAssistantModel());
-        element.setAttribute("customModel", this.getCustomModel());
-        element.setAttribute("tocCollapsed", this.getTocCollapsed());
-        element.setAttribute("codeLanguage", this.getCodeLanguage());
-        element.setAttribute("shellBlockEnabled", this.isShellBlockEnabled() ? "1" : "0");
-        element.setAttribute("hideImages", this.isHideImages() ? "1" : "0");
+        Element element = XmlSerializer.serialize(this);
         for (Map.Entry<String, String> entry : bookMap.entrySet()) {
             Element book = new Element("book");
             book.setAttribute("path", entry.getKey());
@@ -156,28 +181,7 @@ public class PersistentState implements PersistentStateComponent<Element> {
     @Override
     public void loadState(@NotNull Element state) {
         bookMap.clear();
-        this.setBookPathText(state.getAttributeValue("bookPath"));
-        this.setShowFlag(state.getAttributeValue("showFlag"));
-        this.setFontSize(state.getAttributeValue("fontSize"));
-        this.setBefore(state.getAttributeValue("before"));
-        this.setNext(state.getAttributeValue("next"));
-        this.setCurrentLine(state.getAttributeValue("currentLine"));
-        this.setFontType(state.getAttributeValue("fontType"));
-        this.setLineCount(state.getAttributeValue("lineCount"));
-        this.setLineSpace(state.getAttributeValue("lineSpace"));
-        this.setBossKey(state.getAttributeValue("bossKey"));
-        this.setTtsKey(state.getAttributeValue("ttsKey"));
-        this.setTtsVoice(state.getAttributeValue("ttsVoice"));
-        this.setTtsRate(state.getAttributeValue("ttsRate"));
-        this.setAssistantName(state.getAttributeValue("assistantName"));
-        this.setAssistantModel(state.getAttributeValue("assistantModel"));
-        this.setCustomModel(state.getAttributeValue("customModel"));
-        this.setTocCollapsed(state.getAttributeValue("tocCollapsed"));
-        this.setCodeLanguage(state.getAttributeValue("codeLanguage"));
-        // 老配置没有这个属性（null）→ isShellBlockEnabled() 返回 true，保持"默认开启"
-        this.shellBlockEnabled = state.getAttributeValue("shellBlockEnabled");
-        // 老配置没有这个属性（null）→ isHideImages() 返回 false，保持"默认显示插图"
-        this.hideImages = state.getAttributeValue("hideImages");
+        XmlSerializer.deserializeInto(this, state);
         for (Element book : state.getChildren("book")) {
             String path = book.getAttributeValue("path");
             if (path == null || path.isEmpty()) {
@@ -210,8 +214,9 @@ public class PersistentState implements PersistentStateComponent<Element> {
     }
 
     /**
-     * 全部书本路径（按添加顺序）
+     * 全部书本路径（按添加顺序）。@Transient：纯派生值，不参与序列化
      **/
+    @Transient
     public List<String> getBookPathList() {
         return new ArrayList<>(bookMap.keySet());
     }
@@ -314,14 +319,14 @@ public class PersistentState implements PersistentStateComponent<Element> {
      * （旧版默认 1 行，未配置过的用户会直接拿到 8；已配置过的保持原值）
      **/
     public String getLineCount() {
-        return this.lineCount = (lineCount == null || lineCount.isEmpty()) ? "8" : lineCount;
+        return (lineCount == null || lineCount.isEmpty()) ? "8" : lineCount;
     }
     public void setLineCount(String lineCount) {
         this.lineCount = lineCount;
     }
 
     public String getLineSpace() {
-        return this.lineSpace=(lineSpace == null || lineSpace.isEmpty()) ? "0" : lineSpace;
+        return (lineSpace == null || lineSpace.isEmpty()) ? "0" : this.lineSpace;
     }
 
     public void setLineSpace(String lineSpace) {
@@ -419,25 +424,28 @@ public class PersistentState implements PersistentStateComponent<Element> {
 
     /**
      * 是否在自然段中间插单行 shell 命令（设置页 "Shell snippet" 开关）。
-     * 未设置 / 老配置一律视为开启
+     * 未设置 / 老配置一律视为开启。@Transient：派生值，实际存储在 shellBlockFlag
      **/
+    @Transient
     public boolean isShellBlockEnabled() {
-        return !"0".equals(shellBlockEnabled);
+        return !"0".equals(shellBlockFlag);
     }
 
     public void setShellBlockEnabled(boolean enabled) {
-        this.shellBlockEnabled = enabled ? "1" : "0";
+        this.shellBlockFlag = enabled ? "1" : "0";
     }
 
     /**
      * 无图模式（设置页 "Hide book images"）：隐藏正文里的电子书插图，默认关闭。
-     * 与 {@link #isShellBlockEnabled()} 的默认值方向相反，原因见字段注释
+     * 与 {@link #isShellBlockEnabled()} 的默认值方向相反，原因见字段注释。
+     * @Transient：派生值，实际存储在 hideImagesFlag
      **/
+    @Transient
     public boolean isHideImages() {
-        return "1".equals(hideImages);
+        return "1".equals(hideImagesFlag);
     }
 
     public void setHideImages(boolean hide) {
-        this.hideImages = hide ? "1" : "0";
+        this.hideImagesFlag = hide ? "1" : "0";
     }
 }

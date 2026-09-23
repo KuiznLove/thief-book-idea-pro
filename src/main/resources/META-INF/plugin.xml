@@ -1,7 +1,7 @@
 <idea-plugin>
   <id>com.thief.idea</id>
   <name>CodePilot</name>
-  <version>0.3.1</version>
+  <version>0.3.3</version>
   <vendor email="1340976576@qq.com" url="https://github.com/yisier/thief-book-idea">毅斯</vendor>
 
   <description>
@@ -46,6 +46,15 @@
 
   <change-notes>
     <![CDATA[
+      <h3>0.3.3</h3>
+      <ul>
+        <li>稳定性修复：朗读与手动翻页同时进行时不再可能跳页；老板键按住不放不会连续切换界面</li>
+        <li>老板键监听只注册一次（多项目 / 重复打开窗口不再叠加），项目关闭后自动清理并停止朗读</li>
+        <li>epub 源文件变化重新解包后清理上一版临时文件，不再在磁盘上累积</li>
+        <li>修复 macOS / Linux 朗读偶发卡死（子进程输出未排空）与"停止后立刻再点播放没反应"的问题</li>
+        <li>修复配置文件中"每页行数"为 0 时页码计算出错；文件读取失败时显示友好提示，日志写入 IDE 日志便于排查</li>
+        <li>内部重构：文件读取与分页独立成引擎模块，配置读写交给平台序列化——配置文件格式完全兼容，升级后进度与设置原样保留</li>
+      </ul>
       <h3>0.3.1</h3>
       <ul>
         <li>单行 shell 代码块补上完整的卡片头部：SH 角标 + 脚本名（scripts/xxx.sh）+ 复制 / 导出 / 重新生成工具栏 + 绿色 Run 主按钮（播放图标）</li>
